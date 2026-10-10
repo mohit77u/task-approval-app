@@ -279,8 +279,10 @@ frontend/src/
   lib/
     notify.ts  normalizeError.ts  apiMessages.ts  constants.ts
   hooks/
-    useAppDispatch, useAppSelector, useAuth, usePermissions, useDebouncedValue,
-    useTaskFilters, useApiAction, useServerWakeup, useConfirm
+    useAppDispatch, useAppSelector, useAuth, useDebouncedValue,
+    useTaskFilters, useApiAction, useConfirm
+    (no usePermissions: the backend returns `allowedTransitions` per task. No useServerWakeup: the session bootstrap
+    request wakes a sleeping backend and the API layer shows the waking banner.)
   components/
     ui/ (shadcn)  layout/  tasks/  dashboard/  common/
 ```
