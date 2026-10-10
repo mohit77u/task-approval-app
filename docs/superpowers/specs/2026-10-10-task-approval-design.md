@@ -20,7 +20,7 @@ where the *why* is non-obvious).
 
 | # | Assessment requirement | Design answer | Section |
 |---|---|---|---|
-| 1 | Admin and Employee roles; seed 1 Admin + 2 Employees; Admin can create users or use seeded | `Role` enum, idempotent seed script, `POST /users` (Admin) + Users page | 5, 6 |
+| 1 | Admin and Employee roles; seed 1 Admin + 2 Employees; Admin can create users or use seeded | `roles` table (extensible), idempotent seed script, `GET /roles`, `POST /users` (Admin, role chosen from dropdown) + Users page | 4, 5, 6 |
 | 2 | Admin creates, edits, deletes, assigns tasks (title, description, priority, due date); views all | Task CRUD endpoints (Admin), soft delete | 5.3 |
 | 3 | Employee sees only assigned tasks, adds comments, Pending→In Progress, In Progress→Pending Approval | Query scoping in service layer; comments endpoint; state machine | 5.4 |
 | 4 | Admin approves Pending Approval→Completed or rejects→In Progress; Employee cannot approve | State machine table, role-checked in service | 5.4 |
@@ -76,7 +76,7 @@ The README and login page will say: *use a private/incognito window or a second 
 
 Enums (defined once in backend `common/enums`, mirrored in `frontend/src/lib/constants.ts` with labels and colors):
 
-- `Role`: `ADMIN`, `EMPLOYEE`
+- `RoleCode` (constants for the system roles stored in the `roles` table): `ADMIN`, `EMPLOYEE`. Roles themselves are rows, not an enum, so a new role can be added without a schema change.
 - `TaskStatus`: `PENDING`, `IN_PROGRESS`, `PENDING_APPROVAL`, `COMPLETED` (UI label for `PENDING` is "Pending")
 - `TaskPriority`: `LOW`, `MEDIUM`, `HIGH`
 
@@ -84,7 +84,8 @@ Persisted as native MySQL `ENUM` columns through TypeORM.
 
 | Table | Columns |
 |---|---|
-| `users` | id (PK), name, email (unique), password_hash, role, created_at, updated_at |
+| `roles` | id (PK), code (unique, e.g. `ADMIN`, `EMPLOYEE`), name (display label), created_at |
+| `users` | id (PK), name, email (unique), password_hash, role_id (FK roles), created_at, updated_at |
 | `tasks` | id, title, description, priority, status (default `PENDING`), due_date, assignee_id (FK users), created_by_id (FK users), deleted_at (soft delete), created_at, updated_at |
 | `task_comments` | id, task_id (FK), author_id (FK), body, created_at |
 | `task_status_history` | id, task_id (FK), from_status (nullable), to_status, actor_id (FK), note (nullable), created_at |
@@ -149,7 +150,8 @@ returned as `INTERNAL_ERROR` without leaking internals.
 | `GET/POST /tasks/:id/comments` | Admin or assignee | |
 | `GET /tasks/:id/history` | Admin or assignee | |
 | `GET /dashboard` | Authenticated | Counts per status, same scoping as list |
-| `GET/POST /users` | Admin | `GET /users?role=EMPLOYEE` feeds assignee and filter dropdowns |
+| `GET /roles` | Admin | Feeds the role dropdown on the Create User form |
+| `GET/POST /users` | Admin | `POST` takes `{ name, email, password, roleId }`. `GET /users?roleCode=EMPLOYEE` feeds assignee and filter dropdowns |
 | `GET /health` | Public | Warm-up and uptime ping |
 
 Throttling: global 100/min; login 5/min; transitions and comments 20/min. Throttled responses carry `Retry-After`.
@@ -181,7 +183,7 @@ Missing statuses are filled with `0`.
 
 ### 5.6 Seed
 
-Idempotent (upsert by email). Creates 1 Admin, 2 Employees, and a handful of tasks across all statuses
+Idempotent (upsert by `roles.code` and by email). Creates the `ADMIN` and `EMPLOYEE` roles, then 1 Admin, 2 Employees, and a handful of tasks across all statuses
 and priorities for a useful first view. Demo passwords are documented demo values, overridable via env.
 
 ## 6. Frontend
@@ -317,7 +319,13 @@ architecture overview, demo accounts, deployment, known limitations.
 
 ## 12. Out of scope
 
-User deactivation or password reset, email notifications, file attachments, real-time updates, audit export,
+Only Admins create users; Employees cannot. Roles are data, but **what a role may do is defined in code**
+(guards and the state machine key off `roles.code`). A new role row therefore appears in the Create User
+dropdown automatically, yet needs code changes to gain permissions. A dynamic permissions system
+(`permissions` / `role_permissions`) is out of scope and listed as a known limitation in the README.
+Tasks can be assigned only to users whose role code is `EMPLOYEE`.
+
+Also out of scope: User deactivation or password reset, email notifications, file attachments, real-time updates, audit export,
 multi-tenant support, i18n.
 
 ## 13. Open items
