@@ -68,7 +68,7 @@ The README and login page will say: *use a private/incognito window or a second 
 | Frontend | Next.js (App Router) + TypeScript, Tailwind CSS, shadcn/ui, Redux Toolkit + RTK Query, React Hook Form + zod, sonner (toasts), lucide icons |
 | Backend | NestJS (Express adapter) + TypeScript (strict), TypeORM, `mysql2`, class-validator/class-transformer, `@nestjs/throttler`, helmet, bcrypt, Swagger |
 | Database | MySQL 8 |
-| Auth | JWT in httpOnly, Secure, SameSite cookie; bcrypt password hashes |
+| Auth | Access token (JWT, 30 min) + rotating refresh token (opaque, 1 year, hashed in DB), both in httpOnly Secure SameSite cookies; bcrypt password hashes |
 | Tests | Jest + supertest against a real MySQL test DB (docker-compose) |
 | Tooling | ESLint + Prettier in both packages, strict TS, no `any` |
 
@@ -89,6 +89,7 @@ Persisted as native MySQL `ENUM` columns through TypeORM.
 | `tasks` | id, title, description, priority, status (default `PENDING`), due_date, assignee_id (FK users), created_by_id (FK users), deleted_at (soft delete), created_at, updated_at |
 | `task_comments` | id, task_id (FK), author_id (FK), body, created_at |
 | `task_status_history` | id, task_id (FK), from_status (nullable), to_status, actor_id (FK), note (nullable), created_at |
+| `refresh_tokens` | id, user_id (FK), family_id, token_hash (unique, SHA-256), expires_at, revoked_at (nullable), replaced_by_id (nullable), user_agent, ip, created_at |
 
 Indexes: `tasks(assignee_id, status)`, `tasks(status, priority)`, `tasks(due_date)`, `task_comments(task_id, created_at)`, `task_status_history(task_id, created_at)`.
 
@@ -130,7 +131,7 @@ Every error, from every endpoint:
   "requestId": "…", "timestamp": "…", "path": "/api/tasks" }
 ```
 
-Codes: `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `INVALID_TRANSITION`,
+Codes: `UNAUTHENTICATED`, `TOKEN_EXPIRED` (access token expired; client should refresh), `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `INVALID_TRANSITION`,
 `STATE_CONFLICT`, `RATE_LIMITED`, `INTERNAL_ERROR`. Unknown errors are logged with the request id and
 returned as `INTERNAL_ERROR` without leaking internals.
 
@@ -138,8 +139,9 @@ returned as `INTERNAL_ERROR` without leaking internals.
 
 | Endpoint | Access | Notes |
 |---|---|---|
-| `POST /auth/login` | Public, throttled 5/min | Sets httpOnly cookie. Identical error for unknown email and wrong password |
-| `POST /auth/logout` | Authenticated | Clears cookie |
+| `POST /auth/login` | Public, throttled 5/min | Sets access and refresh cookies. Identical error for unknown email and wrong password |
+| `POST /auth/refresh` | Public (needs refresh cookie), throttled 30/min | Rotates the refresh token and issues a new access token (see 5.7) |
+| `POST /auth/logout` | Public (needs refresh cookie) | Revokes the token family and clears both cookies. Works even when the access token has expired |
 | `GET /auth/me` | Authenticated | Session restore |
 | `GET /tasks` | Authenticated | Filters: `status`, `priority`, `assigneeId`, `search`, `page`, `limit`. Employee: forced to own tasks; `assigneeId` ignored |
 | `POST /tasks` | Admin | Status always starts `PENDING`; assignee must be an Employee |
@@ -186,6 +188,26 @@ Missing statuses are filled with `0`.
 Idempotent (upsert by `roles.code` and by email). Creates the `ADMIN` and `EMPLOYEE` roles, then 1 Admin, 2 Employees, and a handful of tasks across all statuses
 and priorities for a useful first view. Demo passwords are documented demo values, overridable via env.
 
+### 5.7 Authentication: access and refresh tokens
+
+| | Access token | Refresh token |
+|---|---|---|
+| Format | Signed JWT (`sub`, role code, `exp`) | Opaque random 256-bit value, never a JWT |
+| Lifetime | **30 minutes** | **1 year** (each rotated token is valid 1 year from its own issue) |
+| Storage | httpOnly Secure SameSite cookie, sent on every API call | httpOnly Secure SameSite cookie, `Path` limited to the auth routes so it is not sent with other calls. In the DB only its SHA-256 hash is stored (the value is high-entropy, so a fast hash is correct here; bcrypt is for passwords) |
+| Verified by | JWT signature, no DB lookup | DB lookup by hash |
+
+Flow:
+1. **Login** creates a new token *family* and sets both cookies.
+2. When the access token expires, a protected call returns `401 TOKEN_EXPIRED`.
+3. **Refresh** looks up the presented token. It must exist, not be revoked, and not be expired. It is then revoked and replaced (`replaced_by_id`) by a new token in the same family, and a new access token is issued (rotation).
+4. **Reuse detection:** if an already-rotated token is presented again, the whole family is revoked and the user must log in again, because the token was probably stolen. A **10-second grace window** after rotation accepts the previous token without revoking, so two tabs refreshing at the same moment do not log the user out by mistake.
+5. **Logout** revokes the family and clears both cookies. Expired and revoked rows of a user are deleted on their next login, so the table does not grow without bound and no scheduler is required.
+
+Why 30 min and 1 year is acceptable: a stolen access token is only useful for 30 minutes, and the long-lived refresh token is rotated on every use, revocable in the DB, hashed at rest, and unreachable from JavaScript. The 1-year lifetime is the requested "stay signed in" behavior and is called out in the README as a deliberate trade-off.
+
+Env var names: `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL` (default `30m`), `REFRESH_TOKEN_TTL_DAYS` (default `365`), `COOKIE_SECURE`.
+
 ## 6. Frontend
 
 ### 6.1 Structure
@@ -196,7 +218,7 @@ frontend/src/
     (auth)/login/
     (app)/layout.tsx  dashboard/  tasks/  tasks/[id]/  users/
     layout.tsx                 StoreProvider + Toaster
-  middleware.ts                redirect when no session cookie (UX only)
+  components/auth/AuthGate.tsx client gate: bootstraps via GET /auth/me (refreshing if needed), shows a skeleton, redirects to login on failure. No cookie-based Next middleware, because the access cookie expires every 30 minutes while the refresh cookie is not visible to pages
   store/
     index.ts  StoreProvider.tsx
     slices/authSlice.ts  uiSlice.ts
@@ -216,7 +238,7 @@ frontend/src/
 
 ### 6.2 API layer (RTK Query)
 
-- `baseApi`: `fetchBaseQuery({ baseUrl: '/api', credentials: 'include' })`, wrapped to: on 401 (outside login) clear auth state and cache and redirect to login; on network error / 502 / 503 / 504 set `serverWaking` and retry with backoff (3 attempts).
+- `baseApi`: `fetchBaseQuery({ baseUrl: '/api', credentials: 'include' })`, wrapped with a **re-auth layer**: on `401 TOKEN_EXPIRED` it calls `POST /auth/refresh` once and retries the original request. Concurrent 401s share a **single in-flight refresh** (a mutex, so N parallel calls trigger one refresh, which also avoids tripping reuse detection). If refresh fails, clear auth state and the cache, show an info toast, and redirect to login. Any other 401 (outside login) takes the same logout path; on network error / 502 / 503 / 504 set `serverWaking` and retry with backoff (3 attempts).
 - Endpoints added with `injectEndpoints` per feature. Tag types: `Task` (id and LIST), `Comment`, `History`, `Dashboard`, `User`. Mutations invalidate exactly the tags they affect.
 - `normalizeError` converts anything (backend error shape, fetch error, timeout) to one typed `ApiError`.
 
@@ -266,7 +288,7 @@ shadcn/ui + Tailwind, light theme with dark-mode support, indigo accent.
 
 ## 7. Security summary
 
-bcrypt hashing; JWT in httpOnly Secure SameSite cookie; global auth guard with explicit `@Public()` opt-out;
+bcrypt hashing; short-lived access JWT plus rotating, hashed, revocable refresh token with reuse detection, both in httpOnly Secure SameSite cookies; global auth guard with explicit `@Public()` opt-out;
 role and ownership checks in services; 404 for unauthorized task access; DTO whitelist and forbid unknown
 fields; ORM-bound parameters only; helmet; strict env validation; rate limiting; no secrets in the repo;
 CORS closed (same-origin through the proxy).
@@ -280,6 +302,7 @@ Backend (Jest + supertest, real MySQL via docker-compose):
 3. Approval: Employee cannot approve; Admin approve writes history and sets `COMPLETED`; Admin reject without a note fails, with a note returns the task to `IN_PROGRESS`.
 4. Concurrency: two simultaneous transitions from the same state yield one success and one 409.
 5. Throttling: sixth login attempt in a minute returns 429.
+6. Tokens: an expired access token returns `401 TOKEN_EXPIRED` and a valid refresh issues a new pair; refresh rotates the token; replaying a rotated token (outside the grace window) revokes the family; logout revokes the refresh token so it can no longer be used.
 
 Frontend: unit tests for `normalizeError` and `useTaskFilters` if time allows. A manual end-to-end pass of the reviewer flow (section 2.4) against the deployed URL is mandatory before submitting.
 
