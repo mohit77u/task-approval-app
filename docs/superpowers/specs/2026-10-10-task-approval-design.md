@@ -101,7 +101,7 @@ Task creation writes the first history row with `from_status = NULL`. Deleting i
 
 ```
 backend/src/
-  main.ts                   helmet, cookie-parser, ValidationPipe, Swagger, trust proxy
+  main.ts                   global prefix /api, helmet, cookie-parser, CORS, ValidationPipe, Swagger, trust proxy
   app.module.ts
   config/                   typed config + env validation (fail fast on missing vars)
   database/
@@ -208,6 +208,57 @@ Why 30 min and 1 year is acceptable: a stolen access token is only useful for 30
 
 Env var names: `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL` (default `30m`), `REFRESH_TOKEN_TTL_DAYS` (default `365`), `COOKIE_SECURE`.
 
+### 5.8 Separate hosts: cookies, CORS and environments
+
+FE (Vercel), BE (Render) and DB (Aiven) run on three different hosts. `*.vercel.app` and `*.onrender.com` are
+different *sites* (both are public suffixes), so a browser calling the API directly would treat the auth cookies as
+third-party: Safari always blocks them and Chrome incognito blocks them by default, which is exactly the mode we
+ask reviewers to use for the second role. **Decision:** the browser talks only to the Next.js origin. Next
+`rewrites` proxy `/api/:path*` to `${BACKEND_URL}/api/:path*` on the server, so cookies are host-only and first-party.
+The backend sets the global prefix `/api`, so paths (and cookie `Path` values) are identical on both sides.
+CORS is still configured strictly (below) for local split-port development, Swagger and any direct client.
+
+**Cookie attributes** (built in one `cookie.options.ts` helper from config; no inline cookie options anywhere):
+
+| Attribute | Local | Deployed |
+|---|---|---|
+| HttpOnly | true | true |
+| Secure | false (`COOKIE_SECURE=false`) | true |
+| SameSite | Lax | Lax |
+| Path | access: `/api`; refresh: `/api/auth` | same |
+| Domain | unset (host-only) | unset |
+| Max-Age | access 30 min; refresh 1 year | same |
+
+If someone deploys without the proxy, `COOKIE_SAMESITE=none` (requires `Secure`) plus the CORS settings below make
+direct cross-origin calls work, but this mode is documented as unsupported for Safari and incognito.
+
+**CORS and request-origin policy:**
+- `FRONTEND_ORIGINS` is an exact-match allowlist (comma separated). No wildcard, no regex. `credentials: true`, explicit methods and headers, `maxAge` 600 s. Vercel preview URLs are not allowed unless added on purpose.
+- A guard rejects state-changing requests (`POST/PATCH/PUT/DELETE`) whose `Origin` header is present but not in the allowlist (`403 FORBIDDEN`). This is a cheap CSRF defense on top of `SameSite=Lax`. Requests without `Origin` (curl, server-to-server) are allowed because they carry no browser cookies.
+- The app refuses to boot in production if `COOKIE_SECURE` is not `true` or `FRONTEND_ORIGINS` contains an `http://` or wildcard entry.
+
+**Proxy awareness:** `trust proxy` is set from `TRUST_PROXY_HOPS` so Express sees the original protocol and client IP. Because requests reach Render through Vercel, the socket IP is Vercel's, so IP-only throttling would be shared across all users. The login throttle is keyed by **normalized email + IP**, and authenticated routes by **user id**; plain IP is only the fallback.
+
+**Environment variables (names only):**
+
+| Where | Variables |
+|---|---|
+| Backend | `NODE_ENV`, `PORT`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSL`, `DB_SSL_CA`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `FRONTEND_ORIGINS`, `TRUST_PROXY_HOPS` |
+| Frontend | `BACKEND_URL` (server-only, read by `rewrites`). There is no `NEXT_PUBLIC_` API URL; the browser uses the relative path `/api` |
+
+| | Local | Deployed |
+|---|---|---|
+| FE | `http://localhost:3000` | `https://<app>.vercel.app` |
+| BE | `http://localhost:4000` | `https://<api>.onrender.com` |
+| DB | docker-compose MySQL, `DB_SSL=false` | Aiven MySQL over TLS, `DB_SSL=true` with `DB_SSL_CA` |
+| `BACKEND_URL` | `http://localhost:4000` | the Render URL |
+| `FRONTEND_ORIGINS` | `http://localhost:3000` | the Vercel URL |
+| `COOKIE_SECURE` | `false` | `true` |
+
+Migrations run on every backend deploy (`migration:run` before `node dist/main`); the seed is run once, manually.
+The database must accept connections from Render (check Aiven's IP allow-list, since Render free has no fixed
+outbound IP). `/api/health` is Render's health check and the keep-alive ping target.
+
 ## 6. Frontend
 
 ### 6.1 Structure
@@ -291,7 +342,7 @@ shadcn/ui + Tailwind, light theme with dark-mode support, indigo accent.
 bcrypt hashing; short-lived access JWT plus rotating, hashed, revocable refresh token with reuse detection, both in httpOnly Secure SameSite cookies; global auth guard with explicit `@Public()` opt-out;
 role and ownership checks in services; 404 for unauthorized task access; DTO whitelist and forbid unknown
 fields; ORM-bound parameters only; helmet; strict env validation; rate limiting; no secrets in the repo;
-CORS closed (same-origin through the proxy).
+strict CORS allowlist plus an `Origin` check on state-changing requests, with the browser reaching the API same-origin through the Next proxy (section 5.8).
 
 ## 8. Testing
 
@@ -354,4 +405,6 @@ multi-tenant support, i18n.
 ## 13. Open items
 
 - Free-tier idle behavior of Aiven MySQL and Render must be verified on the vendors' current pages before deploy.
+- Verify that Vercel's external `rewrites` pass `Set-Cookie` through unchanged and tolerate a Render cold start (up to about a minute) without a gateway timeout. If the first request after idle times out, the client retry in 6.2 and the keep-alive ping cover it; confirm on the real deployment.
+- Verify the Aiven IP allow-list accepts Render's outbound traffic.
 - Final demo credentials are chosen at seed time and listed in the README.
