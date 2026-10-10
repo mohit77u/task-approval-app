@@ -132,7 +132,7 @@ Every error, from every endpoint:
 ```
 
 Codes: `UNAUTHENTICATED`, `TOKEN_EXPIRED` (access token expired; client should refresh), `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `INVALID_TRANSITION`,
-`STATE_CONFLICT`, `RATE_LIMITED`, `INTERNAL_ERROR`. Unknown errors are logged with the request id and
+`STATE_CONFLICT`, `CONFLICT` (duplicate resource, e.g. an email already in use), `RATE_LIMITED`, `INTERNAL_ERROR`. Unknown errors are logged with the request id and
 returned as `INTERNAL_ERROR` without leaking internals.
 
 ### 5.3 Endpoints
@@ -169,7 +169,7 @@ A pure function in `tasks/task-state-machine.ts`: `canTransition(role, isAssigne
 | PENDING_APPROVAL | COMPLETED | Admin | optional |
 | PENDING_APPROVAL | IN_PROGRESS | Admin (reject) | **required** |
 
-Everything else → `INVALID_TRANSITION`. An Admin who is not the assignee cannot perform employee steps;
+A (from, to) pair with no rule → `INVALID_TRANSITION` (422). A pair that has a rule but is attempted by the wrong actor → `FORBIDDEN` (403). A missing required note → `VALIDATION_ERROR` (422, field `note`). Every task response carries `allowedTransitions` for the current viewer, so the table lives only in the backend. An Admin who is not the assignee cannot perform employee steps;
 an Employee can never approve or reject.
 
 Service flow, inside one transaction:
@@ -201,8 +201,8 @@ Flow:
 1. **Login** creates a new token *family* and sets both cookies.
 2. When the access token expires, a protected call returns `401 TOKEN_EXPIRED`.
 3. **Refresh** looks up the presented token. It must exist, not be revoked, and not be expired. It is then revoked and replaced (`replaced_by_id`) by a new token in the same family, and a new access token is issued (rotation).
-4. **Reuse detection:** if an already-rotated token is presented again, the whole family is revoked and the user must log in again, because the token was probably stolen. A **10-second grace window** after rotation accepts the previous token without revoking, so two tabs refreshing at the same moment do not log the user out by mistake.
-5. **Logout** revokes the family and clears both cookies. Expired and revoked rows of a user are deleted on their next login, so the table does not grow without bound and no scheduler is required.
+4. **Reuse detection:** if an already-rotated token is presented again, the whole family is revoked and the user must log in again, because the token was probably stolen. A **10-second grace window** after rotation accepts the previous token without revoking (it returns a new access token only and does not rotate again, because the first response already set the new refresh cookie), so two tabs refreshing at the same moment do not log the user out by mistake.
+5. **Logout** revokes the family and clears both cookies. A user's expired rows, and rows revoked more than 7 days ago, are deleted on their next login (recently revoked rows are kept so reuse detection still works), so the table does not grow without bound and no scheduler is required.
 
 Why 30 min and 1 year is acceptable: a stolen access token is only useful for 30 minutes, and the long-lived refresh token is rotated on every use, revocable in the DB, hashed at rest, and unreachable from JavaScript. The 1-year lifetime is the requested "stay signed in" behavior and is called out in the README as a deliberate trade-off.
 
@@ -227,7 +227,7 @@ CORS is still configured strictly (below) for local split-port development, Swag
 | SameSite | Lax | Lax |
 | Path | access: `/api`; refresh: `/api/auth` | same |
 | Domain | unset (host-only) | unset |
-| Max-Age | access 30 min; refresh 1 year | same |
+| Max-Age | both 1 year. The access JWT itself expires after 30 min; its cookie outlives it so the API can answer `TOKEN_EXPIRED` instead of the browser silently dropping the cookie | same |
 
 If someone deploys without the proxy, `COOKIE_SAMESITE=none` (requires `Secure`) plus the CORS settings below make
 direct cross-origin calls work, but this mode is documented as unsupported for Safari and incognito.
@@ -243,7 +243,7 @@ direct cross-origin calls work, but this mode is documented as unsupported for S
 
 | Where | Variables |
 |---|---|
-| Backend | `NODE_ENV`, `PORT`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSL`, `DB_SSL_CA`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `FRONTEND_ORIGINS`, `TRUST_PROXY_HOPS` |
+| Backend | `NODE_ENV`, `PORT`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSL`, `DB_SSL_CA`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `FRONTEND_ORIGINS`, `TRUST_PROXY_HOPS`, `THROTTLING_ENABLED` (default `true`; the e2e suite turns it off except in the throttling spec) |
 | Frontend | `BACKEND_URL` (server-only, read by `rewrites`). There is no `NEXT_PUBLIC_` API URL; the browser uses the relative path `/api` |
 
 | | Local | Deployed |
@@ -289,7 +289,7 @@ frontend/src/
 
 ### 6.2 API layer (RTK Query)
 
-- `baseApi`: `fetchBaseQuery({ baseUrl: '/api', credentials: 'include' })`, wrapped with a **re-auth layer**: on `401 TOKEN_EXPIRED` it calls `POST /auth/refresh` once and retries the original request. Concurrent 401s share a **single in-flight refresh** (a mutex, so N parallel calls trigger one refresh, which also avoids tripping reuse detection). If refresh fails, clear auth state and the cache, show an info toast, and redirect to login. Any other 401 (outside login) takes the same logout path; on network error / 502 / 503 / 504 set `serverWaking` and retry with backoff (3 attempts).
+- `baseApi`: `fetchBaseQuery({ baseUrl: '/api', credentials: 'include' })`, wrapped with a **re-auth layer**: on `401 TOKEN_EXPIRED` or `401 UNAUTHENTICATED` (outside the auth endpoints) it calls `POST /auth/refresh` once and retries the original request. Concurrent 401s share a **single in-flight refresh** (a mutex, so N parallel calls trigger one refresh, which also avoids tripping reuse detection). If refresh fails, clear auth state and the cache, show an info toast, and redirect to login. Any other 401 (outside login) takes the same logout path; on network error / 502 / 503 / 504 set `serverWaking` and retry with backoff (3 attempts).
 - Endpoints added with `injectEndpoints` per feature. Tag types: `Task` (id and LIST), `Comment`, `History`, `Dashboard`, `User`. Mutations invalidate exactly the tags they affect.
 - `normalizeError` converts anything (backend error shape, fetch error, timeout) to one typed `ApiError`.
 
@@ -314,7 +314,7 @@ Components contain no toast code. `useApiAction` handles pending state (double-s
 
 Status changes happen through a **status dropdown**, with no dedicated Start/Submit buttons.
 
-- All four statuses are listed; only allowed next statuses are selectable (from `usePermissions().allowedTransitions(task)`, a mirror of the backend table). Others are disabled with a tooltip stating why. If nothing is selectable the dropdown is disabled.
+- All four statuses are listed; only allowed next statuses are selectable (from the `allowedTransitions` array the backend returns on every task for the current viewer). Others are disabled with a tooltip stating why. If nothing is selectable the dropdown is disabled.
 - Choosing an option opens a confirmation dialog (`useConfirm`): "Move task to **X**? (From → To)".
 - Reject requires a reason (Confirm disabled until filled). All other changes have an optional note.
 - Cancel reverts the dropdown with no API call. Confirm disables the control while pending.
