@@ -1,3 +1,5 @@
+# Optional: only for developers who prefer a throwaway container over a local MySQL/XAMPP. The default setup uses a local
+# MySQL on port 3306 with databases `taskapp` and `taskapp_test`; if you use this file, point backend/.env.test at port 3307.
 services:
   mysql:
     image: mysql:8.0
