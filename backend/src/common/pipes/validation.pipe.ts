@@ -4,7 +4,9 @@ import { AppException, ErrorDetail } from '../errors/app.exception';
 export function flattenValidationErrors(errors: ValidationError[], parent = ''): ErrorDetail[] {
   return errors.flatMap((error) => {
     const field = parent ? `${parent}.${error.property}` : error.property;
-    const own = Object.values(error.constraints ?? {}).map((message) => ({ field, message }));
+    // One detail per field: several failed validators on the same field would otherwise yield duplicate entries.
+    const messages = Object.values(error.constraints ?? {});
+    const own = messages.length > 0 ? [{ field, message: messages.join('; ') }] : [];
     return [...own, ...flattenValidationErrors(error.children ?? [], field)];
   });
 }
