@@ -1,0 +1,43 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: taskapp-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-taskapp}
+      MYSQL_USER: ${MYSQL_USER:-taskapp}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-taskapp}
+    ports:
+      - '3306:3306'
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-uroot', '-p${MYSQL_ROOT_PASSWORD:-rootpass}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Separate instance for e2e tests: data lives in RAM and is wiped on every run.
+  mysql_test:
+    image: mysql:8.0
+    container_name: taskapp-mysql-test
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: taskapp_test
+      MYSQL_USER: ${MYSQL_USER:-taskapp}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-taskapp}
+    ports:
+      - '3307:3306'
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-uroot', '-p${MYSQL_ROOT_PASSWORD:-rootpass}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  mysql_data:
