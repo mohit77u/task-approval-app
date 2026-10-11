@@ -10,7 +10,11 @@ describe('buildCookieOptions', () => {
   });
 
   it('is httpOnly, host-only and follows the environment for Secure and SameSite', () => {
-    const { access, refresh } = buildCookieOptions({ ...base, secure: false, sameSite: 'strict' });
+    const { access, refresh } = buildCookieOptions({
+      ...base,
+      secure: false,
+      sameSite: 'strict',
+    });
     for (const options of [access, refresh]) {
       expect(options.httpOnly).toBe(true);
       expect(options.secure).toBe(false);

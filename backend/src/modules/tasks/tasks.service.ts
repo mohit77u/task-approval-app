@@ -40,19 +40,31 @@ export class TasksService {
    */
   createScopedQuery(user: AuthUser): SelectQueryBuilder<Task> {
     const qb = this.tasks.createQueryBuilder('task');
-    if (user.role === RoleCode.EMPLOYEE) qb.andWhere('task.assigneeId = :scopeUserId', { scopeUserId: user.id });
+    if (user.role === RoleCode.EMPLOYEE)
+      qb.andWhere('task.assigneeId = :scopeUserId', { scopeUserId: user.id });
     return qb;
   }
 
-  async list(user: AuthUser, query: ListTasksQueryDto): Promise<Paginated<TaskResponse>> {
+  async list(
+    user: AuthUser,
+    query: ListTasksQueryDto,
+  ): Promise<Paginated<TaskResponse>> {
     const qb = this.createScopedQuery(user)
       .leftJoinAndSelect('task.assignee', 'assignee')
       .leftJoinAndSelect('task.createdBy', 'createdBy');
 
-    if (query.status) qb.andWhere('task.status = :status', { status: query.status });
-    if (query.priority) qb.andWhere('task.priority = :priority', { priority: query.priority });
-    if (query.assigneeId && user.role === RoleCode.ADMIN) qb.andWhere('task.assigneeId = :assigneeId', { assigneeId: query.assigneeId });
-    if (query.search) qb.andWhere('task.title LIKE :search', { search: `%${escapeLike(query.search)}%` });
+    if (query.status)
+      qb.andWhere('task.status = :status', { status: query.status });
+    if (query.priority)
+      qb.andWhere('task.priority = :priority', { priority: query.priority });
+    if (query.assigneeId && user.role === RoleCode.ADMIN)
+      qb.andWhere('task.assigneeId = :assigneeId', {
+        assigneeId: query.assigneeId,
+      });
+    if (query.search)
+      qb.andWhere('task.title LIKE :search', {
+        search: `%${escapeLike(query.search)}%`,
+      });
 
     qb.orderBy('task.createdAt', 'DESC')
       .addOrderBy('task.id', 'DESC')
@@ -88,7 +100,11 @@ export class TasksService {
 
     const id = await this.dataSource.transaction(async (em) => {
       const task = await em.getRepository(Task).save(
-        em.getRepository(Task).create({ ...dto, status: TaskStatus.PENDING, createdById: admin.id }),
+        em.getRepository(Task).create({
+          ...dto,
+          status: TaskStatus.PENDING,
+          createdById: admin.id,
+        }),
       );
       await em.getRepository(TaskStatusHistory).insert({
         taskId: task.id,
@@ -102,9 +118,15 @@ export class TasksService {
     return this.getResponse(admin, id);
   }
 
-  async update(admin: AuthUser, id: number, dto: UpdateTaskDto): Promise<TaskResponse> {
+  async update(
+    admin: AuthUser,
+    id: number,
+    dto: UpdateTaskDto,
+  ): Promise<TaskResponse> {
     const task = await this.getForViewer(admin, id);
-    const changes = Object.fromEntries(Object.entries(dto).filter(([, value]) => value !== undefined));
+    const changes = Object.fromEntries(
+      Object.entries(dto).filter(([, value]) => value !== undefined),
+    );
     if (Object.keys(changes).length === 0) return toTaskResponse(task, admin);
 
     if (dto.assigneeId !== undefined && dto.assigneeId !== task.assigneeId) {
@@ -116,9 +138,13 @@ export class TasksService {
       .createQueryBuilder()
       .update()
       .set(changes)
-      .where('id = :id AND status <> :completed AND deleted_at IS NULL', { id, completed: TaskStatus.COMPLETED })
+      .where('id = :id AND status <> :completed AND deleted_at IS NULL', {
+        id,
+        completed: TaskStatus.COMPLETED,
+      })
       .execute();
-    if (result.affected !== 1) throw AppException.stateConflict('Completed tasks cannot be edited');
+    if (result.affected !== 1)
+      throw AppException.stateConflict('Completed tasks cannot be edited');
 
     return this.getResponse(admin, id);
   }
@@ -128,7 +154,11 @@ export class TasksService {
     await this.tasks.softDelete(id);
   }
 
-  async transition(user: AuthUser, id: number, dto: TransitionTaskDto): Promise<TaskResponse> {
+  async transition(
+    user: AuthUser,
+    id: number,
+    dto: TransitionTaskDto,
+  ): Promise<TaskResponse> {
     const task = await this.getForViewer(user, id);
 
     const decision = evaluateTransition({
@@ -138,7 +168,8 @@ export class TasksService {
       to: dto.to,
       note: dto.note,
     });
-    if (!decision.allowed) throw this.toTransitionException(decision, task.status, dto.to);
+    if (!decision.allowed)
+      throw this.toTransitionException(decision, task.status, dto.to);
 
     const from = task.status;
     const note = dto.note?.trim() || null;
@@ -151,12 +182,23 @@ export class TasksService {
         .createQueryBuilder()
         .update()
         .set({ status: dto.to })
-        .where('id = :id AND status = :from AND deleted_at IS NULL', { id, from })
+        .where('id = :id AND status = :from AND deleted_at IS NULL', {
+          id,
+          from,
+        })
         .execute();
       if (result.affected !== 1) {
-        throw AppException.stateConflict('This task was just updated by someone else. Please refresh and try again.');
+        throw AppException.stateConflict(
+          'This task was just updated by someone else. Please refresh and try again.',
+        );
       }
-      await em.getRepository(TaskStatusHistory).insert({ taskId: id, fromStatus: from, toStatus: dto.to, actorId: user.id, note });
+      await em.getRepository(TaskStatusHistory).insert({
+        taskId: id,
+        fromStatus: from,
+        toStatus: dto.to,
+        actorId: user.id,
+        note,
+      });
     });
 
     return this.getResponse(user, id);
@@ -183,14 +225,27 @@ export class TasksService {
     }));
   }
 
-  private toTransitionException(decision: Extract<TransitionDecision, { allowed: false }>, from: TaskStatus, to: TaskStatus): AppException {
+  private toTransitionException(
+    decision: Extract<TransitionDecision, { allowed: false }>,
+    from: TaskStatus,
+    to: TaskStatus,
+  ): AppException {
     switch (decision.reason) {
       case 'INVALID_TRANSITION':
-        return AppException.invalidTransition(`A task cannot move from ${from} to ${to}`);
+        return AppException.invalidTransition(
+          `A task cannot move from ${from} to ${to}`,
+        );
       case 'NOTE_REQUIRED':
-        return AppException.validation([{ field: 'note', message: 'A reason is required when rejecting a task' }]);
+        return AppException.validation([
+          {
+            field: 'note',
+            message: 'A reason is required when rejecting a task',
+          },
+        ]);
       case 'FORBIDDEN':
-        return AppException.forbidden('You are not allowed to make this status change');
+        return AppException.forbidden(
+          'You are not allowed to make this status change',
+        );
     }
   }
 }

@@ -16,12 +16,17 @@ interface TrackedRequest {
  */
 @Injectable()
 export class AppThrottlerGuard extends ThrottlerGuard {
-  protected async getTracker(req: Record<string, unknown>): Promise<string> {
+  protected getTracker(req: Record<string, unknown>): Promise<string> {
     const request = req as TrackedRequest;
-    if (request.path?.endsWith('/auth/login') && typeof request.body?.email === 'string') {
-      return `login:${request.body.email.trim().toLowerCase()}|${request.ip}`;
+    if (
+      request.path?.endsWith('/auth/login') &&
+      typeof request.body?.email === 'string'
+    ) {
+      return Promise.resolve(
+        `login:${request.body.email.trim().toLowerCase()}|${request.ip}`,
+      );
     }
-    if (request.user) return `user:${request.user.id}`;
-    return `ip:${request.ip}`;
+    if (request.user) return Promise.resolve(`user:${request.user.id}`);
+    return Promise.resolve(`ip:${request.ip}`);
   }
 }

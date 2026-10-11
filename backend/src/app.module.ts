@@ -5,6 +5,8 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { Env, validateEnv } from './config/env.validation';
 import { buildDataSourceOptions } from './database/typeorm.options';
 import { AuthModule } from './modules/auth/auth.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { HealthModule } from './modules/health/health.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { UsersModule } from './modules/users/users.module';
@@ -31,6 +33,8 @@ import { SecurityModule } from './modules/security/security.module';
     UsersModule,
     TasksModule,
     CommentsModule,
+    DashboardModule,
+    HealthModule,
   ],
 })
 export class AppModule implements NestModule {

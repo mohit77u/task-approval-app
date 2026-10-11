@@ -4,7 +4,16 @@ import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import { Env } from '../config/env.validation';
 import { ENTITIES } from './entities';
 
-export type DbEnv = Pick<Env, 'DB_HOST' | 'DB_PORT' | 'DB_USER' | 'DB_PASSWORD' | 'DB_NAME' | 'DB_SSL' | 'DB_SSL_CA'>;
+export type DbEnv = Pick<
+  Env,
+  | 'DB_HOST'
+  | 'DB_PORT'
+  | 'DB_USER'
+  | 'DB_PASSWORD'
+  | 'DB_NAME'
+  | 'DB_SSL'
+  | 'DB_SSL_CA'
+>;
 
 export function buildDataSourceOptions(db: DbEnv): DataSourceOptions {
   return {
@@ -17,7 +26,9 @@ export function buildDataSourceOptions(db: DbEnv): DataSourceOptions {
     charset: 'utf8mb4',
     timezone: 'Z',
     // Managed MySQL (Aiven) requires TLS. A single-line env var cannot hold newlines, so "\n" is expanded here.
-    ssl: db.DB_SSL ? { ca: db.DB_SSL_CA?.replace(/\\n/g, '\n'), rejectUnauthorized: true } : undefined,
+    ssl: db.DB_SSL
+      ? { ca: db.DB_SSL_CA?.replace(/\\n/g, '\n'), rejectUnauthorized: true }
+      : undefined,
     namingStrategy: new SnakeNamingStrategy(),
     entities: ENTITIES,
     migrations: [join(__dirname, 'migrations', '*{.ts,.js}')],

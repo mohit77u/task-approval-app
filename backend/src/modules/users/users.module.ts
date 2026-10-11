@@ -7,7 +7,10 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Role, Task, RefreshToken]), SecurityModule],
+  imports: [
+    TypeOrmModule.forFeature([User, Role, Task, RefreshToken]),
+    SecurityModule,
+  ],
   controllers: [UsersController, RolesController],
   providers: [UsersService],
   exports: [UsersService],

@@ -7,7 +7,12 @@ import { DEMO_USERS, SAMPLE_TASKS, SEED_ROLES } from './demo-data';
 
 /** The ordered statuses a task passes through to reach `target`, starting from PENDING. */
 function pathTo(target: TaskStatus): TaskStatus[] {
-  const order = [TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.PENDING_APPROVAL, TaskStatus.COMPLETED];
+  const order = [
+    TaskStatus.PENDING,
+    TaskStatus.IN_PROGRESS,
+    TaskStatus.PENDING_APPROVAL,
+    TaskStatus.COMPLETED,
+  ];
   return order.slice(0, order.indexOf(target) + 1);
 }
 
@@ -21,7 +26,10 @@ function dateOffset(days: number): string {
  * Idempotent: roles and users are looked up before being created, and sample tasks are only inserted into an
  * empty table, so running the seed twice never duplicates data.
  */
-export async function runSeed(dataSource: DataSource, options: { sampleTasks: boolean }): Promise<void> {
+export async function runSeed(
+  dataSource: DataSource,
+  options: { sampleTasks: boolean },
+): Promise<void> {
   const roles = dataSource.getRepository(Role);
   const users = dataSource.getRepository(User);
 
@@ -47,12 +55,15 @@ export async function runSeed(dataSource: DataSource, options: { sampleTasks: bo
   }
 
   if (!options.sampleTasks) return;
-  if ((await dataSource.getRepository(Task).count({ withDeleted: true })) > 0) return;
+  if ((await dataSource.getRepository(Task).count({ withDeleted: true })) > 0)
+    return;
 
   const admin = await users.findOneByOrFail({ email: DEMO_USERS[0].email });
   await dataSource.transaction(async (em) => {
     for (const sample of SAMPLE_TASKS) {
-      const assignee = await em.getRepository(User).findOneByOrFail({ email: sample.assignee });
+      const assignee = await em
+        .getRepository(User)
+        .findOneByOrFail({ email: sample.assignee });
       const task = await em.getRepository(Task).save(
         em.getRepository(Task).create({
           title: sample.title,
@@ -72,7 +83,8 @@ export async function runSeed(dataSource: DataSource, options: { sampleTasks: bo
           taskId: task.id,
           fromStatus: index === 0 ? null : steps[index - 1],
           toStatus: to,
-          actorId: index === 0 || to === TaskStatus.COMPLETED ? admin.id : assignee.id,
+          actorId:
+            index === 0 || to === TaskStatus.COMPLETED ? admin.id : assignee.id,
           note: null,
         }),
       );

@@ -1,5 +1,12 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsNotEmpty, IsString, MaxLength, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { Trim } from '../../../common/decorators/trim.decorator';
 import { TaskPriority } from '../../../common/enums/task-priority.enum';
 import { IsIsoDateOnly } from '../../../common/validators/is-iso-date-only.validator';

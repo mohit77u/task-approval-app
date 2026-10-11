@@ -15,7 +15,10 @@ export function configureApp(app: INestApplication): void {
   const config = app.get<ConfigService<Env, true>>(ConfigService);
 
   // Requests reach Render through Vercel, so Express must know how many proxy hops to trust for protocol and client IP.
-  (app as NestExpressApplication).set('trust proxy', config.get('TRUST_PROXY_HOPS', { infer: true }));
+  (app as NestExpressApplication).set(
+    'trust proxy',
+    config.get('TRUST_PROXY_HOPS', { infer: true }),
+  );
 
   app.setGlobalPrefix('api');
   app.use(helmet());

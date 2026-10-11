@@ -2,11 +2,17 @@ import { z } from 'zod';
 
 /** "true"/"false" strings from process.env → boolean, with an explicit default. */
 const bool = (defaultValue: boolean) =>
-  z.preprocess((v) => (v === undefined || v === '' ? defaultValue : String(v) === 'true'), z.boolean());
+  z.preprocess(
+    (v) =>
+      v === undefined || v === '' ? defaultValue : v === true || v === 'true',
+    z.boolean(),
+  );
 
 export const envSchema = z
   .object({
-    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    NODE_ENV: z
+      .enum(['development', 'test', 'production'])
+      .default('development'),
     PORT: z.coerce.number().int().positive().default(4000),
 
     DB_HOST: z.string().min(1),
@@ -37,17 +43,30 @@ export const envSchema = z
   })
   .superRefine((env, ctx) => {
     if (env.COOKIE_SAMESITE === 'none' && !env.COOKIE_SECURE) {
-      ctx.addIssue({ code: 'custom', path: ['COOKIE_SAMESITE'], message: 'SameSite=none requires COOKIE_SECURE=true' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['COOKIE_SAMESITE'],
+        message: 'SameSite=none requires COOKIE_SECURE=true',
+      });
     }
     if (env.NODE_ENV === 'production') {
       if (!env.COOKIE_SECURE) {
-        ctx.addIssue({ code: 'custom', path: ['COOKIE_SECURE'], message: 'must be true in production' });
+        ctx.addIssue({
+          code: 'custom',
+          path: ['COOKIE_SECURE'],
+          message: 'must be true in production',
+        });
       }
-      if (env.FRONTEND_ORIGINS.some((origin) => !origin.startsWith('https://') || origin.includes('*'))) {
+      if (
+        env.FRONTEND_ORIGINS.some(
+          (origin) => !origin.startsWith('https://') || origin.includes('*'),
+        )
+      ) {
         ctx.addIssue({
           code: 'custom',
           path: ['FRONTEND_ORIGINS'],
-          message: 'production origins must be https:// and must not contain wildcards',
+          message:
+            'production origins must be https:// and must not contain wildcards',
         });
       }
     }
@@ -59,8 +78,12 @@ export type Env = z.infer<typeof envSchema>;
 export function validateEnv(raw: Record<string, unknown>): Env {
   const result = envSchema.safeParse(raw);
   if (!result.success) {
-    const problems = result.error.issues.map((issue) => `  - ${issue.path.join('.') || '(root)'}: ${issue.message}`);
-    throw new Error(`Invalid environment configuration:\n${problems.join('\n')}`);
+    const problems = result.error.issues.map(
+      (issue) => `  - ${issue.path.join('.') || '(root)'}: ${issue.message}`,
+    );
+    throw new Error(
+      `Invalid environment configuration:\n${problems.join('\n')}`,
+    );
   }
   return result.data;
 }

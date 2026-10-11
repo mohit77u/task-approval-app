@@ -15,12 +15,16 @@ export class JwtAuthGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [context.getHandler(), context.getClass()]);
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
     if (isPublic) return true;
 
     const request = context.switchToHttp().getRequest<Request>();
     const token: unknown = request.cookies?.[ACCESS_COOKIE];
-    if (typeof token !== 'string' || token.length === 0) throw AppException.unauthenticated();
+    if (typeof token !== 'string' || token.length === 0)
+      throw AppException.unauthenticated();
 
     request.user = this.tokens.verifyAccessToken(token);
     return true;

@@ -12,11 +12,15 @@ describe('database schema and seed', () => {
   afterAll(async () => ctx.close());
 
   it('seeds both roles and the five demo users (2 admins, 3 employees)', async () => {
-    const roles = await ctx.dataSource.getRepository(Role).find({ order: { code: 'ASC' } });
+    const roles = await ctx.dataSource
+      .getRepository(Role)
+      .find({ order: { code: 'ASC' } });
     expect(roles.map((r) => r.code)).toEqual(['ADMIN', 'EMPLOYEE']);
 
     const users = await ctx.dataSource.getRepository(User).find();
-    expect(users.map((u) => u.email).sort()).toEqual(DEMO_USERS.map((u) => u.email).sort());
+    expect(users.map((u) => u.email).sort()).toEqual(
+      DEMO_USERS.map((u) => u.email).sort(),
+    );
     expect(users.filter((u) => u.role.code === 'ADMIN')).toHaveLength(2);
     expect(users.filter((u) => u.role.code === 'EMPLOYEE')).toHaveLength(3);
     expect(users.every((u) => u.passwordHash.startsWith('$2'))).toBe(true);
@@ -27,14 +31,20 @@ describe('database schema and seed', () => {
   it('is idempotent: running the seed twice creates no duplicates', async () => {
     await runSeed(ctx.dataSource, { sampleTasks: true });
     const tasksAfterFirst = await ctx.dataSource.getRepository(Task).count();
-    const historyAfterFirst = await ctx.dataSource.getRepository(TaskStatusHistory).count();
+    const historyAfterFirst = await ctx.dataSource
+      .getRepository(TaskStatusHistory)
+      .count();
 
     await runSeed(ctx.dataSource, { sampleTasks: true });
 
     expect(await ctx.dataSource.getRepository(User).count()).toBe(5);
     expect(await ctx.dataSource.getRepository(Role).count()).toBe(2);
-    expect(await ctx.dataSource.getRepository(Task).count()).toBe(tasksAfterFirst);
-    expect(await ctx.dataSource.getRepository(TaskStatusHistory).count()).toBe(historyAfterFirst);
+    expect(await ctx.dataSource.getRepository(Task).count()).toBe(
+      tasksAfterFirst,
+    );
+    expect(await ctx.dataSource.getRepository(TaskStatusHistory).count()).toBe(
+      historyAfterFirst,
+    );
   });
 
   it('rejects an invalid status at the database level (native ENUM)', async () => {

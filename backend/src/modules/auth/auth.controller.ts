@@ -1,4 +1,13 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -8,7 +17,13 @@ import { Public } from '../../common/decorators/public.decorator';
 import { AppException } from '../../common/errors/app.exception';
 import type { AuthUser } from '../../common/types/request.types';
 import { Env } from '../../config/env.validation';
-import { ACCESS_COOKIE, AuthCookieOptions, buildCookieOptions, clearOptions, REFRESH_COOKIE } from '../security/cookie.options';
+import {
+  ACCESS_COOKIE,
+  AuthCookieOptions,
+  buildCookieOptions,
+  clearOptions,
+  REFRESH_COOKIE,
+} from '../security/cookie.options';
 import { UserSummary } from '../users/user.mapper';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -43,8 +58,16 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<{ user: UserSummary }> {
-    const session = await this.auth.login(dto.email, dto.password, clientMeta(req));
+  async login(
+    @Body() dto: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ user: UserSummary }> {
+    const session = await this.auth.login(
+      dto.email,
+      dto.password,
+      clientMeta(req),
+    );
     res.cookie(ACCESS_COOKIE, session.accessToken, this.cookies.access);
     res.cookie(REFRESH_COOKIE, session.refreshToken, this.cookies.refresh);
     return { user: session.user };
@@ -54,11 +77,18 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<{ refreshed: true }> {
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ refreshed: true }> {
     try {
-      const result = await this.auth.refresh(readCookie(req, REFRESH_COOKIE), clientMeta(req));
+      const result = await this.auth.refresh(
+        readCookie(req, REFRESH_COOKIE),
+        clientMeta(req),
+      );
       res.cookie(ACCESS_COOKIE, result.accessToken, this.cookies.access);
-      if (result.refreshToken) res.cookie(REFRESH_COOKIE, result.refreshToken, this.cookies.refresh);
+      if (result.refreshToken)
+        res.cookie(REFRESH_COOKIE, result.refreshToken, this.cookies.refresh);
       return { refreshed: true };
     } catch (error) {
       // A dead session must not leave a dead cookie behind, or the client would retry it forever.
@@ -71,7 +101,10 @@ export class AuthController {
   @Public()
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {
+  async logout(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
     await this.auth.logout(readCookie(req, REFRESH_COOKIE));
     this.clearSessionCookies(res);
   }

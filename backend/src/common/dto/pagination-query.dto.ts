@@ -21,6 +21,19 @@ export interface Paginated<T> {
   meta: { page: number; limit: number; total: number; totalPages: number };
 }
 
-export function toPaginated<T>(items: T[], total: number, page: number, limit: number): Paginated<T> {
-  return { items, meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } };
+export function toPaginated<T>(
+  items: T[],
+  total: number,
+  page: number,
+  limit: number,
+): Paginated<T> {
+  return {
+    items,
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    },
+  };
 }

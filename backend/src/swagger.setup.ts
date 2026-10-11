@@ -6,7 +6,9 @@ export function setupSwagger(app: INestApplication): void {
     app,
     new DocumentBuilder()
       .setTitle('Task & Approval API')
-      .setDescription('Authentication uses httpOnly cookies set by POST /api/auth/login.')
+      .setDescription(
+        'Authentication uses httpOnly cookies set by POST /api/auth/login.',
+      )
       .setVersion('1.0')
       .addCookieAuth('access_token')
       .build(),

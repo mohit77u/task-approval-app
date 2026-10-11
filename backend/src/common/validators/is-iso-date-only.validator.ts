@@ -6,7 +6,9 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 export function isIsoDateOnly(value: unknown): boolean {
   if (typeof value !== 'string' || !DATE_ONLY.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value);
+  return (
+    !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value)
+  );
 }
 
 export function IsIsoDateOnly(options?: ValidationOptions): PropertyDecorator {
@@ -15,7 +17,10 @@ export function IsIsoDateOnly(options?: ValidationOptions): PropertyDecorator {
       name: 'isIsoDateOnly',
       target: target.constructor,
       propertyName: String(propertyKey),
-      options: { message: `${String(propertyKey)} must be a valid date in YYYY-MM-DD format`, ...options },
+      options: {
+        message: `${String(propertyKey)} must be a valid date in YYYY-MM-DD format`,
+        ...options,
+      },
       validator: { validate: isIsoDateOnly },
     });
 }

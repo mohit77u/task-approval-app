@@ -18,7 +18,8 @@ const MAX_COMMENTS_PER_RESPONSE = 500;
 @Injectable()
 export class CommentsService {
   constructor(
-    @InjectRepository(TaskComment) private readonly comments: Repository<TaskComment>,
+    @InjectRepository(TaskComment)
+    private readonly comments: Repository<TaskComment>,
     private readonly tasks: TasksService,
   ) {}
 
@@ -30,17 +31,31 @@ export class CommentsService {
       order: { createdAt: 'ASC', id: 'ASC' },
       take: MAX_COMMENTS_PER_RESPONSE,
     });
-    return rows.map(this.toResponse);
+    return rows.map((row) => this.toResponse(row));
   }
 
-  async create(user: AuthUser, taskId: number, body: string): Promise<CommentResponse> {
+  async create(
+    user: AuthUser,
+    taskId: number,
+    body: string,
+  ): Promise<CommentResponse> {
     await this.tasks.getForViewer(user, taskId);
-    const saved = await this.comments.save(this.comments.create({ taskId, authorId: user.id, body }));
-    const row = await this.comments.findOneOrFail({ where: { id: saved.id }, relations: { author: true } });
+    const saved = await this.comments.save(
+      this.comments.create({ taskId, authorId: user.id, body }),
+    );
+    const row = await this.comments.findOneOrFail({
+      where: { id: saved.id },
+      relations: { author: true },
+    });
     return this.toResponse(row);
   }
 
   private toResponse(row: TaskComment): CommentResponse {
-    return { id: row.id, body: row.body, author: { id: row.author.id, name: row.author.name }, createdAt: row.createdAt };
+    return {
+      id: row.id,
+      body: row.body,
+      author: { id: row.author.id, name: row.author.name },
+      createdAt: row.createdAt,
+    };
   }
 }

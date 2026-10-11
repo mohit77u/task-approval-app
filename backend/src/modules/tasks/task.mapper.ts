@@ -25,7 +25,11 @@ export interface TaskResponse {
   updatedAt: Date;
 }
 
-const toPersonRef = ({ id, name, email }: User): PersonRef => ({ id, name, email });
+const toPersonRef = ({ id, name, email }: User): PersonRef => ({
+  id,
+  name,
+  email,
+});
 
 export function toTaskResponse(task: Task, viewer: AuthUser): TaskResponse {
   return {
@@ -37,7 +41,10 @@ export function toTaskResponse(task: Task, viewer: AuthUser): TaskResponse {
     dueDate: task.dueDate,
     assignee: toPersonRef(task.assignee),
     createdBy: toPersonRef(task.createdBy),
-    allowedTransitions: allowedTargets({ role: viewer.role, isAssignee: task.assigneeId === viewer.id }, task.status),
+    allowedTransitions: allowedTargets(
+      { role: viewer.role, isAssignee: task.assigneeId === viewer.id },
+      task.status,
+    ),
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   };

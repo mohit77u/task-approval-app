@@ -5,7 +5,10 @@ import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, IsNull, LessThan } from 'typeorm';
 import { Env } from '../../config/env.validation';
 import { RefreshToken } from '../../database/entities';
-import { generateRefreshToken, hashRefreshToken } from '../security/refresh-token.util';
+import {
+  generateRefreshToken,
+  hashRefreshToken,
+} from '../security/refresh-token.util';
 
 export interface ClientMeta {
   userAgent?: string;
@@ -33,7 +36,12 @@ export class RefreshTokenService {
   /** Starts a new token family for a fresh login and tidies the user's stale rows. */
   async issueForLogin(userId: number, meta: ClientMeta): Promise<string> {
     await this.prune(userId);
-    const { token } = await this.create(this.dataSource.manager, userId, randomUUID(), meta);
+    const { token } = await this.create(
+      this.dataSource.manager,
+      userId,
+      randomUUID(),
+      meta,
+    );
     return token;
   }
 
@@ -47,20 +55,31 @@ export class RefreshTokenService {
 
     return this.dataSource.transaction(async (em): Promise<RotationResult> => {
       const repo = em.getRepository(RefreshToken);
-      const row = await repo.findOne({ where: { tokenHash: hash }, lock: { mode: 'pessimistic_write' } });
+      const row = await repo.findOne({
+        where: { tokenHash: hash },
+        lock: { mode: 'pessimistic_write' },
+      });
       const now = new Date();
 
       if (!row || row.expiresAt <= now) return { kind: 'invalid' };
 
       if (row.revokedAt) {
-        const rotatedRecently = row.replacedById !== null && now.getTime() - row.revokedAt.getTime() <= REFRESH_GRACE_MS;
+        const rotatedRecently =
+          row.replacedById !== null &&
+          now.getTime() - row.revokedAt.getTime() <= REFRESH_GRACE_MS;
         if (rotatedRecently) return { kind: 'grace', userId: row.userId };
-        await repo.update({ familyId: row.familyId, revokedAt: IsNull() }, { revokedAt: now });
+        await repo.update(
+          { familyId: row.familyId, revokedAt: IsNull() },
+          { revokedAt: now },
+        );
         return { kind: 'reuse' };
       }
 
       const next = await this.create(em, row.userId, row.familyId, meta);
-      await repo.update(row.id, { revokedAt: now, replacedById: next.entity.id });
+      await repo.update(row.id, {
+        revokedAt: now,
+        replacedById: next.entity.id,
+      });
       return { kind: 'rotated', userId: row.userId, token: next.token };
     });
   }
@@ -68,9 +87,14 @@ export class RefreshTokenService {
   /** Logout: kills the presented token's whole family so no sibling token can resurrect the session. */
   async revokeFamilyOf(presented: string): Promise<void> {
     const repo = this.dataSource.getRepository(RefreshToken);
-    const row = await repo.findOne({ where: { tokenHash: hashRefreshToken(presented) } });
+    const row = await repo.findOne({
+      where: { tokenHash: hashRefreshToken(presented) },
+    });
     if (!row) return;
-    await repo.update({ familyId: row.familyId, revokedAt: IsNull() }, { revokedAt: new Date() });
+    await repo.update(
+      { familyId: row.familyId, revokedAt: IsNull() },
+      { revokedAt: new Date() },
+    );
   }
 
   private async create(

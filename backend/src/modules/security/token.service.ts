@@ -24,7 +24,10 @@ export class TokenService {
       {
         secret: this.config.get('JWT_ACCESS_SECRET', { infer: true }),
         // The env value is validated as a duration string; the library's type is a narrower template literal.
-        expiresIn: this.config.get('ACCESS_TOKEN_TTL', { infer: true }) as JwtSignOptions['expiresIn'],
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- the cast is required, `string` is not assignable
+        expiresIn: this.config.get('ACCESS_TOKEN_TTL', {
+          infer: true,
+        }) as JwtSignOptions['expiresIn'],
       },
     );
   }
@@ -32,12 +35,20 @@ export class TokenService {
   verifyAccessToken(token: string): AuthUser {
     let payload: AccessPayload;
     try {
-      payload = this.jwt.verify<AccessPayload>(token, { secret: this.config.get('JWT_ACCESS_SECRET', { infer: true }) });
+      payload = this.jwt.verify(token, {
+        secret: this.config.get('JWT_ACCESS_SECRET', { infer: true }),
+      });
     } catch (error) {
       // Distinguishing "expired" lets the client refresh silently instead of sending the user to the login page.
-      throw (error as Error).name === 'TokenExpiredError' ? AppException.tokenExpired() : AppException.unauthenticated();
+      throw (error as Error).name === 'TokenExpiredError'
+        ? AppException.tokenExpired()
+        : AppException.unauthenticated();
     }
-    if (typeof payload.sub !== 'number' || typeof payload.role !== 'string' || !isRoleCode(payload.role)) {
+    if (
+      typeof payload.sub !== 'number' ||
+      typeof payload.role !== 'string' ||
+      !isRoleCode(payload.role)
+    ) {
       throw AppException.unauthenticated();
     }
     return { id: payload.sub, role: payload.role };

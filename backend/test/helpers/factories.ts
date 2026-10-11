@@ -15,7 +15,12 @@ export interface TaskBody {
 export async function createTask(
   admin: Agent,
   assigneeId: number,
-  overrides: Partial<{ title: string; description: string; priority: string; dueDate: string }> = {},
+  overrides: Partial<{
+    title: string;
+    description: string;
+    priority: string;
+    dueDate: string;
+  }> = {},
 ): Promise<TaskBody> {
   const res = await admin
     .post('/api/tasks')

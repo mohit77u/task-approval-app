@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -11,7 +23,9 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { UserSummary } from './user.mapper';
 import { UsersService } from './users.service';
 
-const UserIdPipe = new ParseIntPipe({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY });
+const UserIdPipe = new ParseIntPipe({
+  errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+});
 
 @ApiTags('users')
 @Roles(RoleCode.ADMIN)
@@ -35,13 +49,19 @@ export class UsersController {
   }
 
   @Patch(':id')
-  update(@Param('id', UserIdPipe) id: number, @Body() dto: UpdateUserDto): Promise<UserSummary> {
+  update(
+    @Param('id', UserIdPipe) id: number,
+    @Body() dto: UpdateUserDto,
+  ): Promise<UserSummary> {
     return this.users.update(id, dto);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@CurrentUser() actor: AuthUser, @Param('id', UserIdPipe) id: number): Promise<void> {
+  remove(
+    @CurrentUser() actor: AuthUser,
+    @Param('id', UserIdPipe) id: number,
+  ): Promise<void> {
     return this.users.remove(actor.id, id);
   }
 }

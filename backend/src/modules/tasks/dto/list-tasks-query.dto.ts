@@ -1,5 +1,12 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { Trim } from '../../../common/decorators/trim.decorator';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 import { TaskPriority } from '../../../common/enums/task-priority.enum';

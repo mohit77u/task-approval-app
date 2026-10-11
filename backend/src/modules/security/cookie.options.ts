@@ -22,7 +22,9 @@ export interface AuthCookieOptions {
  * browser silently deleting the cookie and making expiry indistinguishable from "never logged in".
  * No `domain` is set, so cookies are host-only and never leak to sibling subdomains.
  */
-export function buildCookieOptions(settings: CookieSettings): AuthCookieOptions {
+export function buildCookieOptions(
+  settings: CookieSettings,
+): AuthCookieOptions {
   const common: CookieOptions = {
     httpOnly: true,
     secure: settings.secure,

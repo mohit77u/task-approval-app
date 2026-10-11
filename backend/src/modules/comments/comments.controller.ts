@@ -13,13 +13,20 @@ export class CommentsController {
   constructor(private readonly comments: CommentsService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser, @Param('id', TaskIdPipe) id: number): Promise<CommentResponse[]> {
+  list(
+    @CurrentUser() user: AuthUser,
+    @Param('id', TaskIdPipe) id: number,
+  ): Promise<CommentResponse[]> {
     return this.comments.list(user, id);
   }
 
   @Post()
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  create(@CurrentUser() user: AuthUser, @Param('id', TaskIdPipe) id: number, @Body() dto: CreateCommentDto): Promise<CommentResponse> {
+  create(
+    @CurrentUser() user: AuthUser,
+    @Param('id', TaskIdPipe) id: number,
+    @Body() dto: CreateCommentDto,
+  ): Promise<CommentResponse> {
     return this.comments.create(user, id, dto.body);
   }
 }

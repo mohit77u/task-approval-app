@@ -6,4 +6,11 @@ import { Task } from './task.entity';
 import { User } from './user.entity';
 
 export { RefreshToken, Role, Task, TaskComment, TaskStatusHistory, User };
-export const ENTITIES = [Role, User, Task, TaskComment, TaskStatusHistory, RefreshToken];
+export const ENTITIES = [
+  Role,
+  User,
+  Task,
+  TaskComment,
+  TaskStatusHistory,
+  RefreshToken,
+];
