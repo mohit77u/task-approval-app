@@ -7,6 +7,7 @@ import { TaskStatus } from '../../common/enums/task-status.enum';
 import { AppException } from '../../common/errors/app.exception';
 import { AuthUser } from '../../common/types/request.types';
 import { escapeLike } from '../../common/utils/escape-like';
+import { rejectNullFields } from '../../common/utils/reject-null-fields';
 import { Task, TaskStatusHistory } from '../../database/entities';
 import { UsersService } from '../users/users.service';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -123,6 +124,7 @@ export class TasksService {
     id: number,
     dto: UpdateTaskDto,
   ): Promise<TaskResponse> {
+    rejectNullFields(dto);
     const task = await this.getForViewer(admin, id);
     const changes = Object.fromEntries(
       Object.entries(dto).filter(([, value]) => value !== undefined),

@@ -1,6 +1,8 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
+import { forceUtcSession } from './database/utc-session';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { Env, validateEnv } from './config/env.validation';
 import { buildDataSourceOptions } from './database/typeorm.options';
@@ -17,6 +19,12 @@ import { SecurityModule } from './modules/security/security.module';
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
+      dataSourceFactory: async (options) => {
+        if (!options) throw new Error('Missing TypeORM options');
+        const dataSource = await new DataSource(options).initialize();
+        await forceUtcSession(dataSource);
+        return dataSource;
+      },
       useFactory: (config: ConfigService<Env, true>) =>
         buildDataSourceOptions({
           DB_HOST: config.get('DB_HOST', { infer: true }),

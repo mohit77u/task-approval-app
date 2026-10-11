@@ -176,6 +176,20 @@ describe('auth', () => {
       await refreshWith(second).expect(401);
     });
 
+    it('does not honour a rotated token inside the grace window once the session was logged out', async () => {
+      const first = await loginRaw();
+      const rotated = await refreshWith(first).expect(200);
+      const second = cookieValue(rotated, 'refresh_token')!;
+
+      await http()
+        .post('/api/auth/logout')
+        .set('Cookie', [`refresh_token=${second}`])
+        .expect(204);
+
+      // Replaying the older token a moment later must not mint a fresh access token for a logged-out session.
+      await refreshWith(first).expect(401);
+    });
+
     it('rejects a missing, unknown or expired refresh token', async () => {
       await http().post('/api/auth/refresh').expect(401);
       await refreshWith('definitely-not-a-real-token').expect(401);

@@ -32,6 +32,36 @@ describe('tasks: CRUD, scoping and filters', () => {
   beforeEach(async () => clearTaskData(ctx.dataSource));
   afterAll(async () => ctx.close());
 
+  describe('null on required fields', () => {
+    it('answers 422 (not 500) when a required field is set to null on update', async () => {
+      const task = await createTask(admin, priyaId);
+      for (const field of [
+        'title',
+        'description',
+        'priority',
+        'dueDate',
+        'assigneeId',
+      ]) {
+        const res = await admin
+          .patch(`/api/tasks/${task.id}`)
+          .send({ [field]: null })
+          .expect(422);
+        expect(res.body.code).toBe('VALIDATION_ERROR');
+        expect(res.body.details[0].field).toBe(field);
+      }
+    });
+  });
+
+  describe('timestamps', () => {
+    it('returns createdAt close to the real current time, regardless of the database server time zone', async () => {
+      const task = await createTask(admin, priyaId);
+      const skewMs = Math.abs(
+        new Date(task.createdAt as string).getTime() - Date.now(),
+      );
+      expect(skewMs).toBeLessThan(2 * 60 * 1000);
+    });
+  });
+
   describe('authentication', () => {
     it('protects every task endpoint', async () => {
       const http = request(ctx.app.getHttpServer());

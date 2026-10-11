@@ -2,7 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
-import { DataSource, EntityManager, IsNull, LessThan } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  IsNull,
+  LessThan,
+  Repository,
+} from 'typeorm';
 import { Env } from '../../config/env.validation';
 import { RefreshToken } from '../../database/entities';
 import {
@@ -67,7 +73,12 @@ export class RefreshTokenService {
         const rotatedRecently =
           row.replacedById !== null &&
           now.getTime() - row.revokedAt.getTime() <= REFRESH_GRACE_MS;
-        if (rotatedRecently) return { kind: 'grace', userId: row.userId };
+        if (
+          rotatedRecently &&
+          (await this.isSessionAlive(repo, row.replacedById))
+        ) {
+          return { kind: 'grace', userId: row.userId };
+        }
         await repo.update(
           { familyId: row.familyId, revokedAt: IsNull() },
           { revokedAt: now },
@@ -82,6 +93,25 @@ export class RefreshTokenService {
       });
       return { kind: 'rotated', userId: row.userId, token: next.token };
     });
+  }
+
+  /**
+   * The grace window only exists for two tabs refreshing together. It must not outlive the session: after logout, a
+   * password reset or a reuse alarm the newest token of the chain is revoked, and an older token must not mint access.
+   * Walks the rotation chain to its newest token and checks that one is still usable.
+   */
+  private async isSessionAlive(
+    repo: Repository<RefreshToken>,
+    successorId: number | null,
+  ): Promise<boolean> {
+    let currentId = successorId;
+    for (let hops = 0; currentId !== null && hops < 10; hops += 1) {
+      const token = await repo.findOne({ where: { id: currentId } });
+      if (!token) return false;
+      if (!token.revokedAt) return token.expiresAt > new Date();
+      currentId = token.replacedById;
+    }
+    return false;
   }
 
   /** Logout: kills the presented token's whole family so no sibling token can resurrect the session. */

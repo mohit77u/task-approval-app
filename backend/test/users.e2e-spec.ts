@@ -228,6 +228,17 @@ describe('users and roles', () => {
       expect(taken.body.code).toBe('CONFLICT');
     });
 
+    it('answers 422 (not 500) when a required field is set to null', async () => {
+      const user = await createEmployee('null.fields@taskapp.dev');
+      for (const field of ['name', 'email', 'password']) {
+        const res = await admin
+          .patch(`/api/users/${user.id}`)
+          .send({ [field]: null })
+          .expect(422);
+        expect(res.body.details[0].field).toBe(field);
+      }
+    });
+
     it('does not allow changing the role or sending unknown fields', async () => {
       const user = await createEmployee('fixed.role@taskapp.dev');
       const res = await admin

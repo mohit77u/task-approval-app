@@ -4,6 +4,7 @@ import { IsNull, Repository } from 'typeorm';
 import { Paginated, toPaginated } from '../../common/dto/pagination-query.dto';
 import { RoleCode } from '../../common/enums/role-code.enum';
 import { AppException } from '../../common/errors/app.exception';
+import { rejectNullFields } from '../../common/utils/reject-null-fields';
 import { isDuplicateEntry } from '../../common/errors/db-errors';
 import { RefreshToken, Role, Task, User } from '../../database/entities';
 import { PasswordService } from '../security/password.service';
@@ -77,6 +78,7 @@ export class UsersService {
 
   /** Changes only the fields that were sent. A new password also signs the user out everywhere. */
   async update(id: number, dto: UpdateUserDto): Promise<UserSummary> {
+    rejectNullFields(dto, ['phone']);
     const user = await this.findActiveOrFail(id);
     if (dto.name !== undefined) user.name = dto.name;
     if (dto.email !== undefined) user.email = dto.email;
