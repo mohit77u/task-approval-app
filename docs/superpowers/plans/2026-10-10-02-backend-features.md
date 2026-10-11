@@ -1993,7 +1993,7 @@ describe('tasks: CRUD, scoping and filters', () => {
     it('matches % and _ in search literally instead of as wildcards', async () => {
       expect(titles(await admin.get('/api/tasks?search=100%25').expect(200))).toEqual(['Beta budget 100%']);
       expect(titles(await admin.get('/api/tasks?search=%25').expect(200))).toEqual(['Beta budget 100%']);
-      expect(titles(await admin.get('/api/tasks?search=a_a').expect(200))).toEqual([]);
+      expect(titles(await admin.get('/api/tasks?search=e_a').expect(200))).toEqual([]);
       expect(titles(await admin.get('/api/tasks?search=gamma_').expect(200))).toEqual(['Gamma_audit']);
       expect(titles(await admin.get('/api/tasks?search=ALPHA').expect(200))).toEqual(['Alpha report']);
     });
