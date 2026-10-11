@@ -5,6 +5,7 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { Env, validateEnv } from './config/env.validation';
 import { buildDataSourceOptions } from './database/typeorm.options';
 import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
 import { SecurityModule } from './modules/security/security.module';
 
 @Module({
@@ -25,6 +26,7 @@ import { SecurityModule } from './modules/security/security.module';
     }),
     SecurityModule,
     AuthModule,
+    UsersModule,
   ],
 })
 export class AppModule implements NestModule {

@@ -1382,7 +1382,7 @@ describe('users and roles', () => {
 
     it('resets the password: the old one stops working and open sessions are revoked', async () => {
       const user = await createEmployee('reset.me@taskapp.dev');
-      const session = await loginAgent(ctx.app, user);
+      const session = await loginAgent(ctx.app, { email: user.email, password: user.password });
       await admin.patch(`/api/users/${user.id}`).send({ password: 'Brandnew456' }).expect(200);
 
       await session.post('/api/auth/refresh').expect(401);
@@ -1393,7 +1393,7 @@ describe('users and roles', () => {
 
     it('soft-deletes a user: they disappear, cannot sign in or refresh, and the email stays reserved', async () => {
       const user = await createEmployee('delete.me@taskapp.dev');
-      const session = await loginAgent(ctx.app, user);
+      const session = await loginAgent(ctx.app, { email: user.email, password: user.password });
 
       await admin.delete(`/api/users/${user.id}`).expect(204);
 
