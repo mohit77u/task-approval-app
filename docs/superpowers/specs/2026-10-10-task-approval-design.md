@@ -20,7 +20,7 @@ where the *why* is non-obvious).
 
 | # | Assessment requirement | Design answer | Section |
 |---|---|---|---|
-| 1 | Admin and Employee roles; seed 1 Admin + 2 Employees; Admin can create users or use seeded | `roles` table (extensible), idempotent seed script, `GET /roles`, `POST /users` (Admin, role chosen from dropdown) + Users page | 4, 5, 6 |
+| 1 | Admin and Employee roles; seed 2 Admins + 3 Employees; Admin can create users or use seeded | `roles` table (extensible), idempotent seed script, `GET /roles`, Admin-only users CRUD (create, edit, soft delete) + Users page | 4, 5, 6 |
 | 2 | Admin creates, edits, deletes, assigns tasks (title, description, priority, due date); views all | Task CRUD endpoints (Admin), soft delete | 5.3 |
 | 3 | Employee sees only assigned tasks, adds comments, Pending→In Progress, In Progress→Pending Approval | Query scoping in service layer; comments endpoint; state machine | 5.4 |
 | 4 | Admin approves Pending Approval→Completed or rejects→In Progress; Employee cannot approve | State machine table, role-checked in service | 5.4 |
@@ -85,7 +85,7 @@ Persisted as native MySQL `ENUM` columns through TypeORM.
 | Table | Columns |
 |---|---|
 | `roles` | id (PK), code (unique, e.g. `ADMIN`, `EMPLOYEE`), name (display label), created_at |
-| `users` | id (PK), name, email (unique), password_hash, role_id (FK roles), created_at, updated_at |
+| `users` | id (PK), name, email (unique), phone (nullable), password_hash, role_id (FK roles), is_default (seeded accounts), deleted_at (soft delete), created_at, updated_at |
 | `tasks` | id, title, description, priority, status (default `PENDING`), due_date, assignee_id (FK users), created_by_id (FK users), deleted_at (soft delete), created_at, updated_at |
 | `task_comments` | id, task_id (FK), author_id (FK), body, created_at |
 | `task_status_history` | id, task_id (FK), from_status (nullable), to_status, actor_id (FK), note (nullable), created_at |
@@ -153,7 +153,7 @@ returned as `INTERNAL_ERROR` without leaking internals.
 | `GET /tasks/:id/history` | Admin or assignee | |
 | `GET /dashboard` | Authenticated | Counts per status, same scoping as list |
 | `GET /roles` | Admin | Feeds the role dropdown on the Create User form |
-| `GET/POST /users` | Admin | `POST` takes `{ name, email, password, roleId }`. `GET /users?roleCode=EMPLOYEE` feeds assignee and filter dropdowns |
+| `GET/POST /users`, `GET/PATCH/DELETE /users/:id` | Admin | `POST` takes `{ name, email, phone?, password, roleId }`. `PATCH` edits `name`, `email`, `phone` (null clears), `password` (also signs the user out); the role cannot change. `DELETE` is a soft delete, refused (409) for yourself, for default (seeded) accounts, and for any user with a task assigned in any status. `GET /users?roleCode=EMPLOYEE` feeds assignee and filter dropdowns |
 | `GET /health` | Public | Warm-up and uptime ping |
 
 Throttling: global 100/min; login 5/min; transitions and comments 20/min. Throttled responses carry `Retry-After`.
@@ -185,7 +185,7 @@ Missing statuses are filled with `0`.
 
 ### 5.6 Seed
 
-Idempotent (upsert by `roles.code` and by email). Creates the `ADMIN` and `EMPLOYEE` roles, then 1 Admin, 2 Employees, and a handful of tasks across all statuses
+Idempotent (upsert by `roles.code` and by email). Creates the `ADMIN` and `EMPLOYEE` roles, then 2 Admins, 3 Employees (all flagged `is_default`, so they cannot be deleted), and a handful of tasks across all statuses
 and priorities for a useful first view. Demo passwords are documented demo values, overridable via env.
 
 ### 5.7 Authentication: access and refresh tokens

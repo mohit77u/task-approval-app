@@ -195,6 +195,9 @@ export interface User {
   id: number;
   name: string;
   email: string;
+  phone: string | null;
+  /** Seeded demo account: cannot be deleted. */
+  isDefault: boolean;
   role: Role;
 }
 
@@ -429,7 +432,7 @@ import { successMessageFor } from './apiMessages';
 
 describe('successMessageFor', () => {
   it('has a message for every mutation endpoint', () => {
-    for (const endpoint of ['login', 'logout', 'createTask', 'updateTask', 'deleteTask', 'createComment', 'createUser']) {
+    for (const endpoint of ['login', 'logout', 'createTask', 'updateTask', 'deleteTask', 'createComment', 'createUser', 'updateUser', 'deleteUser']) {
       expect(successMessageFor(endpoint, undefined)).toEqual(expect.any(String));
     }
   });
@@ -609,6 +612,8 @@ const MESSAGES: Record<string, string | ((arg: unknown) => string)> = {
   transitionTask: transitionMessage,
   createComment: 'Comment added',
   createUser: 'User created',
+  updateUser: 'User updated',
+  deleteUser: 'User deleted',
 };
 
 export function successMessageFor(endpointName: string, originalArg: unknown): string | undefined {
@@ -666,7 +671,7 @@ git commit -m "feat(frontend): add API types, error normalisation and notificati
 - Produces:
   - `sessionEnded({ notify: boolean })` action; `makeStore()`, `AppStore`, `RootState`, `AppDispatch`; `useAppDispatch`, `useAppSelector`, `StoreProvider`
   - `authSlice` state `{ user: User | null; status: 'loading' | 'authenticated' | 'unauthenticated' }`; `uiSlice` `{ serverWaking: boolean }` with `setServerWaking`
-  - Hooks: `useLoginMutation`, `useLogoutMutation`, `useMeQuery`; `useListTasksQuery(filters)`, `useGetTaskQuery(id)`, `useCreateTaskMutation`, `useUpdateTaskMutation`, `useDeleteTaskMutation`, `useTransitionTaskMutation`, `useGetTaskHistoryQuery(id)`; `useListCommentsQuery(taskId)`, `useCreateCommentMutation`; `useListUsersQuery(params)`, `useListRolesQuery()`, `useCreateUserMutation`; `useGetDashboardQuery()`
+  - Hooks: `useLoginMutation`, `useLogoutMutation`, `useMeQuery`; `useListTasksQuery(filters)`, `useGetTaskQuery(id)`, `useCreateTaskMutation`, `useUpdateTaskMutation`, `useDeleteTaskMutation`, `useTransitionTaskMutation`, `useGetTaskHistoryQuery(id)`; `useListCommentsQuery(taskId)`, `useCreateCommentMutation`; `useListUsersQuery(params)`, `useListRolesQuery()`, `useCreateUserMutation`, `useUpdateUserMutation`, `useDeleteUserMutation`; `useGetDashboardQuery()`
   - `TaskFilters { status?; priority?; assigneeId?; search?; page?; limit? }`, `TransitionArg` (from `apiMessages`)
   - `coldStartRetry.delaysMs: number[]` (test hook)
 
@@ -1208,8 +1213,19 @@ import { baseApi } from './baseApi';
 export interface UserInput {
   name: string;
   email: string;
+  phone?: string;
   password: string;
   roleId: number;
+}
+
+export interface UserUpdateInput {
+  id: number;
+  name?: string;
+  email?: string;
+  /** `null` clears the phone. */
+  phone?: string | null;
+  /** Setting a password signs the user out everywhere. */
+  password?: string;
 }
 
 export const usersApi = baseApi.injectEndpoints({
@@ -1223,10 +1239,24 @@ export const usersApi = baseApi.injectEndpoints({
       query: (body) => ({ url: 'users', method: 'POST', body }),
       invalidatesTags: ['User'],
     }),
+    updateUser: build.mutation<User, UserUpdateInput>({
+      query: ({ id, ...body }) => ({ url: `users/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['User'],
+    }),
+    deleteUser: build.mutation<void, number>({
+      query: (id) => ({ url: `users/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['User'],
+    }),
   }),
 });
 
-export const { useListUsersQuery, useListRolesQuery, useCreateUserMutation } = usersApi;
+export const {
+  useListUsersQuery,
+  useListRolesQuery,
+  useCreateUserMutation,
+  useUpdateUserMutation,
+  useDeleteUserMutation,
+} = usersApi;
 ```
 `frontend/src/services/api/dashboardApi.ts`:
 ```ts
@@ -1933,9 +1963,11 @@ export default function HomePage(): never {
 ```ts
 /** Public demo credentials, identical to the seed data and published in the README. */
 export const DEMO_ACCOUNTS = [
-  { label: 'Admin', name: 'Aarav Mehta', email: 'admin@taskapp.dev', password: 'Admin@12345' },
+  { label: 'Admin 1', name: 'Mohit Singh', email: 'admin@taskapp.dev', password: 'Admin@12345' },
+  { label: 'Admin 2', name: 'Kavya Nair', email: 'admin2@taskapp.dev', password: 'Admin@12345' },
   { label: 'Employee 1', name: 'Priya Sharma', email: 'priya@taskapp.dev', password: 'Employee@12345' },
   { label: 'Employee 2', name: 'Rahul Verma', email: 'rahul@taskapp.dev', password: 'Employee@12345' },
+  { label: 'Employee 3', name: 'Ananya Iyer', email: 'ananya@taskapp.dev', password: 'Employee@12345' },
 ] as const;
 ```
 `frontend/src/app/(auth)/login/page.tsx`:

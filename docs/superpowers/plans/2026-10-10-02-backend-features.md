@@ -627,7 +627,7 @@ git commit -m "feat(backend): add security module with tokens, cookies, guards a
 **Interfaces:**
 - Consumes: `TokenService`, `PasswordService`, `generateRefreshToken`, cookie helpers, entities
 - Produces:
-  - `UserSummary { id; name; email; role: { id; code; name } }`, `toUserSummary(user: User): UserSummary`
+  - `UserSummary { id; name; email; phone: string | null; isDefault: boolean; role: { id; code; name } }`, `toUserSummary(user: User): UserSummary`
   - `POST /api/auth/login` → `200 { user: UserSummary }` + cookies; `POST /api/auth/refresh` → `200 { refreshed: true }`; `POST /api/auth/logout` → `204`; `GET /api/auth/me` → `UserSummary`
   - `RefreshTokenService`: `issueForLogin(userId, meta): Promise<string>`, `rotate(presented, meta): Promise<RotationResult>`, `revokeFamilyOf(presented): Promise<void>`, constant `REFRESH_GRACE_MS`
   - Test helpers: `ADMIN`, `PRIYA`, `RAHUL` credentials, `loginAgent(app, creds)`, `userIdOf(ds, email)`, `cookieValue(res, name)`, `setCookies(res)`
@@ -870,6 +870,9 @@ export interface UserSummary {
   id: number;
   name: string;
   email: string;
+  phone: string | null;
+  /** Seeded demo account: the UI hides Delete for these and the API refuses it. */
+  isDefault: boolean;
   role: { id: number; code: string; name: string };
 }
 
@@ -879,6 +882,8 @@ export function toUserSummary(user: User): UserSummary {
     id: user.id,
     name: user.name,
     email: user.email,
+    phone: user.phone,
+    isDefault: user.isDefault,
     role: { id: user.role.id, code: user.role.code, name: user.role.name },
   };
 }
@@ -1022,7 +1027,7 @@ export class RefreshTokenService {
 ```ts
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { isRoleCode } from '../../common/enums/role-code.enum';
 import { AppException } from '../../common/errors/app.exception';
 import { User } from '../../database/entities';
@@ -1055,7 +1060,7 @@ export class AuthService {
   ) {}
 
   async login(email: string, password: string, meta: ClientMeta): Promise<LoginResult> {
-    const user = await this.users.findOne({ where: { email } });
+    const user = await this.users.findOne({ where: { email, deletedAt: IsNull() } });
     // Same work and same error whether the email exists or not, so neither message nor timing enumerates accounts.
     const valid = user ? await this.passwords.verify(password, user.passwordHash) : (await this.passwords.verifyDummy(password), false);
     if (!user || !valid) throw AppException.unauthenticated('Invalid email or password');
@@ -1073,7 +1078,7 @@ export class AuthService {
     const result = await this.refreshTokens.rotate(presented, meta);
     if (result.kind === 'invalid' || result.kind === 'reuse') throw AppException.unauthenticated(SESSION_ENDED);
 
-    const user = await this.users.findOne({ where: { id: result.userId } });
+    const user = await this.users.findOne({ where: { id: result.userId, deletedAt: IsNull() } });
     if (!user) throw AppException.unauthenticated(SESSION_ENDED);
 
     return {
@@ -1087,7 +1092,7 @@ export class AuthService {
   }
 
   async me(userId: number): Promise<UserSummary> {
-    const user = await this.users.findOne({ where: { id: userId } });
+    const user = await this.users.findOne({ where: { id: userId, deletedAt: IsNull() } });
     if (!user) throw AppException.unauthenticated();
     return toUserSummary(user);
   }
@@ -1222,25 +1227,29 @@ git commit -m "feat(backend): add login, rotating refresh tokens, logout and ses
 
 ---
 
-### Task 7: Users and roles (Admin)
+### Task 7: Users CRUD and roles (Admin)
 
 **Files:**
 - Create: `backend/src/modules/users/{users.module,users.service,users.controller,roles.controller}.ts`
-- Create: `backend/src/modules/users/dto/{create-user,list-users-query}.dto.ts`
+- Create: `backend/src/modules/users/dto/{create-user,update-user,list-users-query}.dto.ts`
 - Modify: `backend/src/app.module.ts`
 - Test: `backend/test/users.e2e-spec.ts`
 
 **Interfaces:**
-- Consumes: `toUserSummary`, `PasswordService`, `isDuplicateEntry`, `Roles`, `Paginated`
+- Consumes: `toUserSummary`, `PasswordService`, `isDuplicateEntry`, `Roles`, `Paginated`, `RefreshToken` and `Task` entities
 - Produces:
-  - `GET /api/roles` → `{ id; code; name }[]`; `GET /api/users?roleCode&page&limit` → `Paginated<UserSummary>`; `POST /api/users` → `201 UserSummary`
+  - `GET /api/roles` → `{ id; code; name }[]`; `GET /api/users?roleCode&page&limit` → `Paginated<UserSummary>`; `POST /api/users` → `201 UserSummary`; `GET /api/users/:id` → `UserSummary`; `PATCH /api/users/:id` (`name`, `email`, `phone` (null clears it), `password`; the role cannot be changed) → `UserSummary`; `DELETE /api/users/:id` → `204`
+  - Delete is a soft delete (`deletedAt`). It is refused with `409 CONFLICT` for yourself, for a default (seeded) account, and for any user who has a task assigned in any status (including COMPLETED). Sessions are revoked; the email stays reserved
   - `UsersService.ensureAssignableEmployee(userId: number): Promise<User>` (throws 422 with field `assigneeId`)
 
 - [ ] **Step 1: Write the failing test** — `backend/test/users.e2e-spec.ts`
 
 ```ts
 import request from 'supertest';
-import { ADMIN, Agent, loginAgent, PRIYA } from './helpers/auth';
+import { Task } from '../src/database/entities';
+import { TaskPriority } from '../src/common/enums/task-priority.enum';
+import { TaskStatus } from '../src/common/enums/task-status.enum';
+import { ADMIN, Agent, loginAgent, PRIYA, userIdOf } from './helpers/auth';
 import { createTestApp, TestContext } from './helpers/test-app';
 
 describe('users and roles', () => {
@@ -1260,6 +1269,9 @@ describe('users and roles', () => {
     await priya.get('/api/users').expect(403);
     await priya.get('/api/roles').expect(403);
     await priya.post('/api/users').send({}).expect(403);
+    await priya.get('/api/users/1').expect(403);
+    await priya.patch('/api/users/1').send({ name: 'X' }).expect(403);
+    await priya.delete('/api/users/1').expect(403);
   });
 
   it('lists roles for the create-user dropdown', async () => {
@@ -1269,11 +1281,13 @@ describe('users and roles', () => {
 
   it('lists users with pagination and filters by role code', async () => {
     const all = await admin.get('/api/users').expect(200);
-    expect(all.body.meta).toMatchObject({ page: 1, limit: 20, total: 3 });
+    expect(all.body.meta).toMatchObject({ page: 1, limit: 20, total: 5 });
     expect(JSON.stringify(all.body)).not.toMatch(/passwordHash|password_hash/);
 
     const employees = await admin.get('/api/users?roleCode=EMPLOYEE').expect(200);
-    expect(employees.body.items.map((u: { email: string }) => u.email).sort()).toEqual(['priya@taskapp.dev', 'rahul@taskapp.dev']);
+    expect(employees.body.items.map((u: { email: string }) => u.email).sort()).toEqual([
+      'ananya@taskapp.dev', 'priya@taskapp.dev', 'rahul@taskapp.dev',
+    ]);
 
     await admin.get('/api/users?roleCode=ROOT').expect(422);
     await admin.get('/api/users?limit=1000').expect(422);
@@ -1290,10 +1304,10 @@ describe('users and roles', () => {
       const roleId = await employeeRoleId();
       const res = await admin
         .post('/api/users')
-        .send({ name: '  Neha Kapoor ', email: 'Neha.Kapoor@TaskApp.dev', password: 'Welcome123', roleId })
+        .send({ name: '  Neha Kapoor ', email: 'Neha.Kapoor@TaskApp.dev', phone: ' +91 98765 43210 ', password: 'Welcome123', roleId })
         .expect(201);
 
-      expect(res.body).toMatchObject({ name: 'Neha Kapoor', email: 'neha.kapoor@taskapp.dev', role: { code: 'EMPLOYEE' } });
+      expect(res.body).toMatchObject({ name: 'Neha Kapoor', email: 'neha.kapoor@taskapp.dev', phone: '+91 98765 43210', role: { code: 'EMPLOYEE' } });
       expect(JSON.stringify(res.body)).not.toMatch(/password/i);
       await request(ctx.app.getHttpServer()).post('/api/auth/login').send({ email: 'neha.kapoor@taskapp.dev', password: 'Welcome123' }).expect(200);
     });
@@ -1318,11 +1332,117 @@ describe('users and roles', () => {
       const tooLong = await admin.post('/api/users').send({ name: 'A', email: 'a@taskapp.dev', password: `a1${'x'.repeat(80)}`, roleId }).expect(422);
       expect(tooLong.body.details[0].field).toBe('password');
 
+      const badPhone = await admin.post('/api/users').send({ name: 'A', email: 'a@taskapp.dev', phone: 'call me', password: 'Welcome123', roleId }).expect(422);
+      expect(badPhone.body.details[0]).toMatchObject({ field: 'phone' });
+
       const badRole = await admin.post('/api/users').send({ name: 'A', email: 'a@taskapp.dev', password: 'Welcome123', roleId: 9999 }).expect(422);
       expect(badRole.body.details).toEqual([{ field: 'roleId', message: 'Unknown role' }]);
 
       const extra = await admin.post('/api/users').send({ name: 'A', email: 'a@taskapp.dev', password: 'Welcome123', roleId, isAdmin: true }).expect(422);
       expect(extra.body.details[0].field).toBe('isAdmin');
+    });
+  });
+
+  describe('reading, editing and deleting a user', () => {
+    async function createEmployee(email: string): Promise<{ id: number; email: string; password: string }> {
+      const roles = await admin.get('/api/roles').expect(200);
+      const roleId = roles.body.find((r: { code: string }) => r.code === 'EMPLOYEE').id;
+      const res = await admin.post('/api/users').send({ name: 'Temp User', email, password: 'Welcome123', roleId }).expect(201);
+      return { id: res.body.id, email, password: 'Welcome123' };
+    }
+
+    it('returns one user and 404 for an unknown id; a non-numeric id is a validation error', async () => {
+      const id = await userIdOf(ctx.dataSource, PRIYA.email);
+      const res = await admin.get(`/api/users/${id}`).expect(200);
+      expect(res.body).toMatchObject({ email: PRIYA.email, role: { code: 'EMPLOYEE' } });
+      expect((await admin.get('/api/users/99999').expect(404)).body.code).toBe('NOT_FOUND');
+      await admin.get('/api/users/abc').expect(422);
+    });
+
+    it('edits name, email and phone, clears the phone with null, and rejects a taken email', async () => {
+      const user = await createEmployee('edit.me@taskapp.dev');
+      const edited = await admin
+        .patch(`/api/users/${user.id}`)
+        .send({ name: '  Edited Name ', email: 'Edited.Me@TaskApp.dev', phone: '+91 91111 22222' })
+        .expect(200);
+      expect(edited.body).toMatchObject({ name: 'Edited Name', email: 'edited.me@taskapp.dev', phone: '+91 91111 22222' });
+
+      const cleared = await admin.patch(`/api/users/${user.id}`).send({ phone: null }).expect(200);
+      expect(cleared.body.phone).toBeNull();
+
+      const taken = await admin.patch(`/api/users/${user.id}`).send({ email: 'priya@taskapp.dev' }).expect(409);
+      expect(taken.body.code).toBe('CONFLICT');
+    });
+
+    it('does not allow changing the role or sending unknown fields', async () => {
+      const user = await createEmployee('fixed.role@taskapp.dev');
+      const res = await admin.patch(`/api/users/${user.id}`).send({ roleId: 1 }).expect(422);
+      expect(res.body.details[0].field).toBe('roleId');
+    });
+
+    it('resets the password: the old one stops working and open sessions are revoked', async () => {
+      const user = await createEmployee('reset.me@taskapp.dev');
+      const session = await loginAgent(ctx.app, user);
+      await admin.patch(`/api/users/${user.id}`).send({ password: 'Brandnew456' }).expect(200);
+
+      await session.post('/api/auth/refresh').expect(401);
+      const http = (): ReturnType<typeof request> => request(ctx.app.getHttpServer());
+      await http().post('/api/auth/login').send({ email: user.email, password: user.password }).expect(401);
+      await http().post('/api/auth/login').send({ email: user.email, password: 'Brandnew456' }).expect(200);
+    });
+
+    it('soft-deletes a user: they disappear, cannot sign in or refresh, and the email stays reserved', async () => {
+      const user = await createEmployee('delete.me@taskapp.dev');
+      const session = await loginAgent(ctx.app, user);
+
+      await admin.delete(`/api/users/${user.id}`).expect(204);
+
+      await admin.get(`/api/users/${user.id}`).expect(404);
+      const list = await admin.get('/api/users?limit=100').expect(200);
+      expect(list.body.items.some((u: { id: number }) => u.id === user.id)).toBe(false);
+      await session.post('/api/auth/refresh').expect(401);
+      await session.get('/api/auth/me').expect(401);
+      await request(ctx.app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: user.password }).expect(401);
+
+      const roles = await admin.get('/api/roles').expect(200);
+      const roleId = roles.body.find((r: { code: string }) => r.code === 'EMPLOYEE').id;
+      await admin.post('/api/users').send({ name: 'Again', email: user.email, password: 'Welcome123', roleId }).expect(409);
+      await admin.delete(`/api/users/${user.id}`).expect(404);
+    });
+
+    it('refuses to delete yourself', async () => {
+      const myId = await userIdOf(ctx.dataSource, ADMIN.email);
+      const res = await admin.delete(`/api/users/${myId}`).expect(409);
+      expect(res.body.code).toBe('CONFLICT');
+    });
+
+    it('refuses to delete default (seeded) accounts, including the other admin', async () => {
+      const priyaId = await userIdOf(ctx.dataSource, PRIYA.email);
+      const admin2Id = await userIdOf(ctx.dataSource, 'admin2@taskapp.dev');
+      for (const id of [priyaId, admin2Id]) {
+        const res = await admin.delete(`/api/users/${id}`).expect(409);
+        expect(res.body.message).toMatch(/default/i);
+      }
+      expect((await admin.get(`/api/users/${priyaId}`).expect(200)).body.isDefault).toBe(true);
+    });
+
+    it('refuses to delete a user who has any task, even a completed one, until the task is gone', async () => {
+      const user = await createEmployee('busy@taskapp.dev');
+      expect((await admin.get(`/api/users/${user.id}`).expect(200)).body.isDefault).toBe(false);
+      const tasks = ctx.dataSource.getRepository(Task);
+      const adminId = await userIdOf(ctx.dataSource, ADMIN.email);
+      const task = await tasks.save(
+        tasks.create({
+          title: 'Finished work', description: 'x', priority: TaskPriority.LOW, status: TaskStatus.COMPLETED,
+          dueDate: '2030-01-01', assigneeId: user.id, createdById: adminId,
+        }),
+      );
+
+      const blocked = await admin.delete(`/api/users/${user.id}`).expect(409);
+      expect(blocked.body.message).toMatch(/assigned task/i);
+
+      await tasks.softDelete(task.id);
+      await admin.delete(`/api/users/${user.id}`).expect(204);
     });
   });
 });
@@ -1338,7 +1458,7 @@ Expected: FAIL (routes missing).
 `backend/src/modules/users/dto/create-user.dto.ts`:
 ```ts
 import { Type } from 'class-transformer';
-import { IsEmail, IsInt, IsNotEmpty, IsString, Matches, MaxLength, Min, MinLength } from 'class-validator';
+import { IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, Matches, MaxLength, Min, MinLength } from 'class-validator';
 import { NormalizeEmail, Trim } from '../../../common/decorators/trim.decorator';
 
 export class CreateUserDto {
@@ -1353,6 +1473,12 @@ export class CreateUserDto {
   @MaxLength(255)
   email!: string;
 
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @Matches(/^\+?[0-9 ()-]{7,20}$/, { message: 'phone must be 7–20 characters: digits, spaces, +, -, ( )' })
+  phone?: string;
+
   // 72 is bcrypt's input limit; longer passwords would be silently truncated.
   @IsString()
   @MinLength(8)
@@ -1364,6 +1490,40 @@ export class CreateUserDto {
   @IsInt()
   @Min(1)
   roleId!: number;
+}
+```
+`backend/src/modules/users/dto/update-user.dto.ts` (the role is deliberately not editable: it would break the "assignee must be an Employee" invariant for tasks the user already holds):
+```ts
+import { IsEmail, IsNotEmpty, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { NormalizeEmail, Trim } from '../../../common/decorators/trim.decorator';
+
+export class UpdateUserDto {
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @NormalizeEmail()
+  @IsEmail()
+  @MaxLength(255)
+  email?: string;
+
+  // `null` clears the phone; `IsOptional` skips the checks for null and undefined.
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @Matches(/^\+?[0-9 ()-]{7,20}$/, { message: 'phone must be 7–20 characters: digits, spaces, +, -, ( )' })
+  phone?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  @Matches(/^(?=.*[A-Za-z])(?=.*\d).+$/, { message: 'password must contain at least one letter and one number' })
+  password?: string;
 }
 ```
 `backend/src/modules/users/dto/list-users-query.dto.ts`:
@@ -1385,22 +1545,27 @@ export class ListUsersQueryDto extends PaginationQueryDto {
 ```ts
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { Paginated, toPaginated } from '../../common/dto/pagination-query.dto';
 import { RoleCode } from '../../common/enums/role-code.enum';
 import { AppException } from '../../common/errors/app.exception';
 import { isDuplicateEntry } from '../../common/errors/db-errors';
-import { Role, User } from '../../database/entities';
+import { RefreshToken, Role, Task, User } from '../../database/entities';
 import { PasswordService } from '../security/password.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { toUserSummary, UserSummary } from './user.mapper';
+
+const EMAIL_TAKEN = 'A user with this email already exists';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(Role) private readonly roles: Repository<Role>,
+    @InjectRepository(Task) private readonly tasks: Repository<Task>,
+    @InjectRepository(RefreshToken) private readonly refreshTokens: Repository<RefreshToken>,
     private readonly passwords: PasswordService,
   ) {}
 
@@ -1412,6 +1577,7 @@ export class UsersService {
     const qb = this.users
       .createQueryBuilder('user')
       .innerJoinAndSelect('user.role', 'role')
+      .where('user.deletedAt IS NULL')
       .orderBy('user.name', 'ASC')
       .addOrderBy('user.id', 'ASC')
       .skip((query.page - 1) * query.limit)
@@ -1422,44 +1588,101 @@ export class UsersService {
     return toPaginated(rows.map(toUserSummary), total, query.page, query.limit);
   }
 
+  async get(id: number): Promise<UserSummary> {
+    return toUserSummary(await this.findActiveOrFail(id));
+  }
+
   async create(dto: CreateUserDto): Promise<UserSummary> {
     const role = await this.roles.findOne({ where: { id: dto.roleId } });
     if (!role) throw AppException.validation([{ field: 'roleId', message: 'Unknown role' }]);
 
     try {
       const saved = await this.users.save(
-        this.users.create({ name: dto.name, email: dto.email, roleId: role.id, passwordHash: await this.passwords.hash(dto.password) }),
+        this.users.create({ name: dto.name, email: dto.email, phone: dto.phone ?? null, roleId: role.id, passwordHash: await this.passwords.hash(dto.password) }),
       );
       // Re-read so the response carries the role relation exactly like every other user payload.
       return toUserSummary(await this.users.findOneByOrFail({ id: saved.id }));
     } catch (error) {
       // The unique index is the real guard; a pre-check alone would race.
-      if (isDuplicateEntry(error)) throw AppException.conflict('A user with this email already exists');
+      if (isDuplicateEntry(error)) throw AppException.conflict(EMAIL_TAKEN);
       throw error;
     }
   }
 
+  /** Changes only the fields that were sent. A new password also signs the user out everywhere. */
+  async update(id: number, dto: UpdateUserDto): Promise<UserSummary> {
+    const user = await this.findActiveOrFail(id);
+    if (dto.name !== undefined) user.name = dto.name;
+    if (dto.email !== undefined) user.email = dto.email;
+    if (dto.phone !== undefined) user.phone = dto.phone;
+    if (dto.password !== undefined) user.passwordHash = await this.passwords.hash(dto.password);
+
+    try {
+      await this.users.save(user);
+    } catch (error) {
+      if (isDuplicateEntry(error)) throw AppException.conflict(EMAIL_TAKEN);
+      throw error;
+    }
+    if (dto.password !== undefined) await this.revokeSessions(user.id);
+    return toUserSummary(await this.users.findOneByOrFail({ id }));
+  }
+
+  /**
+   * Soft delete, for non-default users with no tasks. The row stays so tasks, comments and history keep their authors, and the email stays reserved
+   * (the unique index still covers it). An access token already issued lives until it expires (30 min at most);
+   * refresh and sign-in are refused immediately.
+   */
+  async remove(actorId: number, id: number): Promise<void> {
+    if (actorId === id) throw AppException.conflict('You cannot delete your own account');
+    const user = await this.findActiveOrFail(id);
+    if (user.isDefault) throw AppException.conflict('Default accounts cannot be deleted');
+
+    // Any status counts, COMPLETED included: a user with task history is kept so that history stays meaningful.
+    const assigned = await this.tasks.count({ where: { assigneeId: id } });
+    if (assigned > 0) {
+      throw AppException.conflict(`This user has ${assigned} assigned task(s). Delete or reassign them before deleting the user.`);
+    }
+
+    await this.users.update(user.id, { deletedAt: new Date() });
+    await this.revokeSessions(user.id);
+  }
+
   /** Tasks can only be assigned to existing employees. Reported against the `assigneeId` field so forms can show it inline. */
   async ensureAssignableEmployee(userId: number): Promise<User> {
-    const user = await this.users.findOne({ where: { id: userId } });
+    const user = await this.users.findOne({ where: { id: userId, deletedAt: IsNull() } });
     if (!user || user.role.code !== RoleCode.EMPLOYEE) {
       throw AppException.validation([{ field: 'assigneeId', message: 'Assignee must be an existing employee' }]);
     }
     return user;
   }
+
+  private async findActiveOrFail(id: number): Promise<User> {
+    const user = await this.users.findOne({ where: { id, deletedAt: IsNull() } });
+    if (!user) throw AppException.notFound('User');
+    return user;
+  }
+
+  private async revokeSessions(userId: number): Promise<void> {
+    await this.refreshTokens.update({ userId, revokedAt: IsNull() }, { revokedAt: new Date() });
+  }
 }
 ```
 `backend/src/modules/users/users.controller.ts`:
 ```ts
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Paginated } from '../../common/dto/pagination-query.dto';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Paginated } from '../../common/dto/pagination-query.dto';
 import { RoleCode } from '../../common/enums/role-code.enum';
+import { AuthUser } from '../../common/types/request.types';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { UserSummary } from './user.mapper';
 import { UsersService } from './users.service';
+
+const UserIdPipe = new ParseIntPipe({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY });
 
 @ApiTags('users')
 @Roles(RoleCode.ADMIN)
@@ -1472,9 +1695,25 @@ export class UsersController {
     return this.users.list(query);
   }
 
+  @Get(':id')
+  get(@Param('id', UserIdPipe) id: number): Promise<UserSummary> {
+    return this.users.get(id);
+  }
+
   @Post()
   create(@Body() dto: CreateUserDto): Promise<UserSummary> {
     return this.users.create(dto);
+  }
+
+  @Patch(':id')
+  update(@Param('id', UserIdPipe) id: number, @Body() dto: UpdateUserDto): Promise<UserSummary> {
+    return this.users.update(id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@CurrentUser() actor: AuthUser, @Param('id', UserIdPipe) id: number): Promise<void> {
+    return this.users.remove(actor.id, id);
   }
 }
 ```
@@ -1503,14 +1742,14 @@ export class RolesController {
 ```ts
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Role, User } from '../../database/entities';
+import { RefreshToken, Role, Task, User } from '../../database/entities';
 import { SecurityModule } from '../security/security.module';
 import { RolesController } from './roles.controller';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Role]), SecurityModule],
+  imports: [TypeOrmModule.forFeature([User, Role, Task, RefreshToken]), SecurityModule],
   controllers: [UsersController, RolesController],
   providers: [UsersService],
   exports: [UsersService],

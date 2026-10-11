@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build every screen: dashboard, task list with debounced URL-synced filters, create/edit dialog, task detail with the confirmed status dropdown, comments and history, the admin users page, and a Playwright smoke test of the reviewer workflow.
+**Goal:** Build every screen: dashboard, task list with debounced URL-synced filters, create/edit dialog, task detail with the confirmed status dropdown, comments and history, the admin users page (create, edit, delete), and a Playwright smoke test of the reviewer workflow.
 
 **Architecture:** Pages are thin client components that compose small, single-purpose components. All server state comes from RTK Query hooks; filters live in the URL (so refresh and sharing work) and are parsed/serialised by pure, unit-tested functions. Workflow permissions come from the backend's `allowedTransitions`; the UI renders them and adds confirmation.
 
@@ -40,7 +40,7 @@ frontend/src/
     common/Pagination.tsx
     dashboard/{StatusCard,AttentionList}.tsx
     tasks/{TaskFilterBar,TasksTable,TaskFormDialog,TaskStatusControl,CommentsPanel,HistoryTimeline,TaskDetails}.tsx
-    users/{UsersTable,CreateUserDialog}.tsx
+    users/{UsersTable,UserFormDialog}.tsx
   app/(app)/
     dashboard/page.tsx
     tasks/page.tsx  tasks/[id]/page.tsx
@@ -1530,10 +1530,10 @@ git commit -m "feat(frontend): add task detail with confirmed status dropdown, c
 
 ---
 
-### Task 18: Users page and the Playwright smoke test
+### Task 18: Users page (create, edit, delete) and the Playwright smoke test
 
 **Files:**
-- Create: `frontend/src/components/users/{UsersTable,CreateUserDialog}.tsx`, `frontend/src/app/(app)/users/page.tsx`
+- Create: `frontend/src/components/users/{UsersTable,UserFormDialog}.tsx`, `frontend/src/app/(app)/users/page.tsx`
 - Create: `frontend/playwright.config.ts`, `frontend/e2e/workflow.spec.ts`
 - Modify: `frontend/package.json` (script), `frontend/.gitignore`
 
@@ -1545,11 +1545,27 @@ git commit -m "feat(frontend): add task detail with confirmed status dropdown, c
 
 `frontend/src/components/users/UsersTable.tsx`:
 ```tsx
+import { Pencil, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { User } from '@/types/api';
 
-export function UsersTable({ users }: { users: User[] }): React.JSX.Element {
+interface UsersTableProps {
+  users: User[];
+  currentUserId: number;
+  onEdit: (user: User) => void;
+  onDelete: (user: User) => void;
+}
+
+/** Why Delete is unavailable for a row, or undefined when it is allowed. The backend enforces the same rules (and the "has tasks" one). */
+function deleteBlockedReason(user: User, currentUserId: number): string | undefined {
+  if (user.isDefault) return 'Default accounts cannot be deleted';
+  if (user.id === currentUserId) return 'You cannot delete your own account';
+  return undefined;
+}
+
+export function UsersTable({ users, currentUserId, onEdit, onDelete }: UsersTableProps): React.JSX.Element {
   return (
     <div className="overflow-x-auto rounded-md border">
       <Table>
@@ -1557,26 +1573,50 @@ export function UsersTable({ users }: { users: User[] }): React.JSX.Element {
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Email</TableHead>
+            <TableHead>Phone</TableHead>
             <TableHead>Role</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {users.map((user) => (
-            <TableRow key={user.id}>
-              <TableCell className="font-medium">{user.name}</TableCell>
-              <TableCell>{user.email}</TableCell>
-              <TableCell>
-                <Badge variant={user.role.code === 'ADMIN' ? 'default' : 'secondary'}>{user.role.name}</Badge>
-              </TableCell>
-            </TableRow>
-          ))}
+          {users.map((user) => {
+            const blocked = deleteBlockedReason(user, currentUserId);
+            return (
+              <TableRow key={user.id}>
+                <TableCell className="font-medium">
+                  {user.name}
+                  {user.isDefault && <span className="ml-2 text-xs text-muted-foreground">(default)</span>}
+                </TableCell>
+                <TableCell>{user.email}</TableCell>
+                <TableCell>{user.phone ?? '—'}</TableCell>
+                <TableCell>
+                  <Badge variant={user.role.code === 'ADMIN' ? 'default' : 'secondary'}>{user.role.name}</Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button variant="ghost" size="icon" aria-label={`Edit ${user.name}`} onClick={() => onEdit(user)}>
+                    <Pencil className="h-4 w-4" aria-hidden />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Delete ${user.name}`}
+                    title={blocked}
+                    disabled={Boolean(blocked)}
+                    onClick={() => onDelete(user)}
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
   );
 }
 ```
-`frontend/src/components/users/CreateUserDialog.tsx`:
+`frontend/src/components/users/UserFormDialog.tsx` (one form for both modes; in edit mode the role is shown read-only because the backend does not allow changing it, and the password is optional):
 ```tsx
 'use client';
 
@@ -1590,43 +1630,67 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { applyFieldErrors, useApiAction } from '@/hooks/useApiAction';
-import { useCreateUserMutation, useListRolesQuery } from '@/services/api/usersApi';
+import { useCreateUserMutation, useListRolesQuery, useUpdateUserMutation } from '@/services/api/usersApi';
+import { User } from '@/types/api';
+
+const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d)/;
 
 // Mirrors the backend rules (8–72 chars, a letter and a digit) so most mistakes are caught before the request.
-const schema = z.object({
-  name: z.string().trim().min(1, 'Enter a name').max(120, 'Keep the name under 120 characters'),
-  email: z.string().trim().min(1, 'Enter an email').email('Enter a valid email'),
-  password: z
-    .string()
-    .min(8, 'Use at least 8 characters')
-    .max(72, 'Use at most 72 characters')
-    .regex(/^(?=.*[A-Za-z])(?=.*\d)/, 'Include at least one letter and one number'),
-  roleId: z.string().min(1, 'Choose a role'),
-});
-type FormValues = z.infer<typeof schema>;
+function makeSchema(isEdit: boolean) {
+  return z.object({
+    name: z.string().trim().min(1, 'Enter a name').max(120, 'Keep the name under 120 characters'),
+    email: z.string().trim().min(1, 'Enter an email').email('Enter a valid email'),
+    phone: z.string().trim().regex(/^(\+?[0-9 ()-]{7,20})?$/, 'Use 7–20 digits, spaces, +, - or ( )'),
+    password: z
+      .string()
+      .refine((value) => (isEdit && value === '') || value.length >= 8, 'Use at least 8 characters')
+      .refine((value) => value.length <= 72, 'Use at most 72 characters')
+      .refine((value) => (isEdit && value === '') || PASSWORD_RULE.test(value), 'Include at least one letter and one number'),
+    roleId: isEdit ? z.string() : z.string().min(1, 'Choose a role'),
+  });
+}
+type FormValues = z.infer<ReturnType<typeof makeSchema>>;
 
 function FieldError({ message }: { message?: string }): React.JSX.Element | null {
   return message ? <p className="text-sm text-destructive">{message}</p> : null;
 }
 
-function CreateUserForm({ onDone }: { onDone: () => void }): React.JSX.Element {
+function UserForm({ user, onDone }: { user?: User; onDone: () => void }): React.JSX.Element {
+  const isEdit = Boolean(user);
   const roles = useListRolesQuery();
   const [createUser] = useCreateUserMutation();
+  const [updateUser] = useUpdateUserMutation();
   const { run, isPending } = useApiAction();
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
-    defaultValues: { name: '', email: '', password: '', roleId: '' },
+    resolver: zodResolver(makeSchema(isEdit)),
+    defaultValues: {
+      name: user?.name ?? '',
+      email: user?.email ?? '',
+      phone: user?.phone ?? '',
+      password: '',
+      roleId: user ? String(user.role.id) : '',
+    },
   });
   const { errors } = form.formState;
 
   const onSubmit = async (values: FormValues): Promise<void> => {
-    const result = await run(() => createUser({ ...values, roleId: Number(values.roleId) }).unwrap());
+    const result = await run(() =>
+      user
+        ? updateUser({
+            id: user.id,
+            name: values.name,
+            email: values.email,
+            phone: values.phone === '' ? null : values.phone,
+            ...(values.password ? { password: values.password } : {}),
+          }).unwrap()
+        : createUser({ ...values, phone: values.phone || undefined, roleId: Number(values.roleId) }).unwrap(),
+    );
     if (result.ok) {
       onDone();
       return;
     }
-    const matched = applyFieldErrors(result.error, form.setError, ['name', 'email', 'password', 'roleId']);
+    const matched = applyFieldErrors(result.error, form.setError, ['name', 'email', 'phone', 'password', 'roleId']);
     // A duplicate email arrives as a plain CONFLICT without a field name, but we know where it belongs.
     if (!matched && result.error.code === 'CONFLICT') form.setError('email', { type: 'server', message: result.error.message });
   };
@@ -1644,7 +1708,12 @@ function CreateUserForm({ onDone }: { onDone: () => void }): React.JSX.Element {
         <FieldError message={errors.email?.message} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="user-password">Temporary password</Label>
+        <Label htmlFor="user-phone">Phone (optional)</Label>
+        <Input id="user-phone" type="tel" autoComplete="off" aria-invalid={Boolean(errors.phone)} {...form.register('phone')} />
+        <FieldError message={errors.phone?.message} />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="user-password">{isEdit ? 'New password (leave blank to keep the current one)' : 'Temporary password'}</Label>
         <Input id="user-password" type="password" autoComplete="new-password" aria-invalid={Boolean(errors.password)} {...form.register('password')} />
         <FieldError message={errors.password?.message} />
       </div>
@@ -1654,7 +1723,7 @@ function CreateUserForm({ onDone }: { onDone: () => void }): React.JSX.Element {
           control={form.control}
           name="roleId"
           render={({ field }) => (
-            <Select value={field.value} onValueChange={field.onChange} disabled={roles.isLoading}>
+            <Select value={field.value} onValueChange={field.onChange} disabled={isEdit || roles.isLoading}>
               <SelectTrigger id="user-role">
                 <SelectValue placeholder={roles.isLoading ? 'Loading roles…' : 'Select a role'} />
               </SelectTrigger>
@@ -1676,22 +1745,32 @@ function CreateUserForm({ onDone }: { onDone: () => void }): React.JSX.Element {
         </Button>
         <Button type="submit" disabled={isPending}>
           {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
-          Create user
+          {isEdit ? 'Save changes' : 'Create user'}
         </Button>
       </DialogFooter>
     </form>
   );
 }
 
-export function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }): React.JSX.Element {
+interface UserFormDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Present for edit mode, absent for create mode. */
+  user?: User;
+}
+
+export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps): React.JSX.Element {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>New user</DialogTitle>
-          <DialogDescription>They can sign in right away with this email and password.</DialogDescription>
+          <DialogTitle>{user ? 'Edit user' : 'New user'}</DialogTitle>
+          <DialogDescription>
+            {user ? 'The role cannot be changed after the account is created.' : 'They can sign in right away with this email and password.'}
+          </DialogDescription>
         </DialogHeader>
-        <CreateUserForm onDone={() => onOpenChange(false)} />
+        {/* Keyed so each user (or a fresh create) starts from clean form state. */}
+        <UserForm key={user?.id ?? 'new'} user={user} onDone={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>
   );
@@ -1706,33 +1785,58 @@ import { useState } from 'react';
 import { ErrorState } from '@/components/common/ErrorState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Pagination } from '@/components/common/Pagination';
-import { CreateUserDialog } from '@/components/users/CreateUserDialog';
+import { UserFormDialog } from '@/components/users/UserFormDialog';
 import { UsersTable } from '@/components/users/UsersTable';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useApiAction } from '@/hooks/useApiAction';
 import { useAuth } from '@/hooks/useAuth';
-import { useListUsersQuery } from '@/services/api/usersApi';
+import { useConfirm } from '@/hooks/useConfirm';
+import { useDeleteUserMutation, useListUsersQuery } from '@/services/api/usersApi';
+import { User } from '@/types/api';
 
 const PAGE_SIZE = 10;
 
 export default function UsersPage(): React.JSX.Element {
-  const { isAdmin } = useAuth();
+  const { user: me, isAdmin } = useAuth();
+  const confirm = useConfirm();
+  const { run } = useApiAction();
+  const [deleteUser] = useDeleteUserMutation();
   const [page, setPage] = useState(1);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<User | undefined>();
   // Skipped for non-admins: the backend would answer 403 anyway, and there is no reason to provoke an error toast.
   const users = useListUsersQuery({ page, limit: PAGE_SIZE }, { skip: !isAdmin });
 
-  if (!isAdmin) {
+  if (!isAdmin || !me) {
     return <ErrorState title="Admins only" message="You do not have access to this page." />;
   }
+
+  const openCreate = (): void => {
+    setEditing(undefined);
+    setFormOpen(true);
+  };
+  const openEdit = (user: User): void => {
+    setEditing(user);
+    setFormOpen(true);
+  };
+  const onDelete = async (user: User): Promise<void> => {
+    const { confirmed } = await confirm({
+      title: `Delete ${user.name}?`,
+      description: 'They will no longer be able to sign in. This only works for users who have no tasks assigned.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (confirmed) await run(() => deleteUser(user.id).unwrap());
+  };
 
   return (
     <div>
       <PageHeader
         title="Users"
-        description="Create accounts and see who has access."
+        description="Create, edit and remove accounts."
         actions={
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button onClick={openCreate}>
             <UserPlus className="mr-2 h-4 w-4" aria-hidden />
             New user
           </Button>
@@ -1745,7 +1849,7 @@ export default function UsersPage(): React.JSX.Element {
         <Skeleton className="h-48 w-full" />
       ) : (
         <>
-          <UsersTable users={users.data.items} />
+          <UsersTable users={users.data.items} currentUserId={me.id} onEdit={openEdit} onDelete={(user) => void onDelete(user)} />
           <Pagination
             page={users.data.meta.page}
             totalPages={users.data.meta.totalPages}
@@ -1757,7 +1861,7 @@ export default function UsersPage(): React.JSX.Element {
         </>
       )}
 
-      <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editing} />
     </div>
   );
 }

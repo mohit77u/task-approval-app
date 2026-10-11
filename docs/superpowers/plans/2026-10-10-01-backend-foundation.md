@@ -1063,6 +1063,21 @@ export class User {
   @Column({ type: 'varchar', length: 255, unique: true })
   email!: string;
 
+  /** Optional contact number, stored as typed (digits, spaces, +, -, parentheses). */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  phone!: string | null;
+
+  /** True for the seeded demo accounts. They can be edited but never deleted. */
+  @Column({ type: 'boolean', default: false })
+  isDefault!: boolean;
+
+  /**
+   * Soft delete, handled by hand (not @DeleteDateColumn): tasks, comments and history keep pointing at the person who
+   * did the work, and TypeORM's automatic soft-delete filter would hide those authors from joined queries.
+   */
+  @Column({ type: 'datetime', nullable: true })
+  deletedAt!: Date | null;
+
   @Column({ type: 'varchar', length: 255 })
   passwordHash!: string;
 
@@ -1400,9 +1415,11 @@ export const SEED_ROLES = [
 ] as const;
 
 export const DEMO_USERS = [
-  { name: 'Aarav Mehta', email: 'admin@taskapp.dev', role: RoleCode.ADMIN, password: DEMO_PASSWORDS.admin },
-  { name: 'Priya Sharma', email: 'priya@taskapp.dev', role: RoleCode.EMPLOYEE, password: DEMO_PASSWORDS.employee },
-  { name: 'Rahul Verma', email: 'rahul@taskapp.dev', role: RoleCode.EMPLOYEE, password: DEMO_PASSWORDS.employee },
+  { name: 'Mohit Singh', phone: '+91 90000 00001', email: 'admin@taskapp.dev', role: RoleCode.ADMIN, password: DEMO_PASSWORDS.admin },
+  { name: 'Kavya Nair', phone: '+91 90000 00002', email: 'admin2@taskapp.dev', role: RoleCode.ADMIN, password: DEMO_PASSWORDS.admin },
+  { name: 'Priya Sharma', phone: '+91 90000 00003', email: 'priya@taskapp.dev', role: RoleCode.EMPLOYEE, password: DEMO_PASSWORDS.employee },
+  { name: 'Rahul Verma', phone: '+91 90000 00004', email: 'rahul@taskapp.dev', role: RoleCode.EMPLOYEE, password: DEMO_PASSWORDS.employee },
+  { name: 'Ananya Iyer', phone: '+91 90000 00005', email: 'ananya@taskapp.dev', role: RoleCode.EMPLOYEE, password: DEMO_PASSWORDS.employee },
 ] as const;
 
 export interface SampleTask {
@@ -1468,6 +1485,8 @@ export async function runSeed(dataSource: DataSource, options: { sampleTasks: bo
       users.create({
         name: demo.name,
         email: demo.email,
+        phone: demo.phone,
+        isDefault: true,
         roleId: role.id,
         passwordHash: await bcrypt.hash(demo.password, BCRYPT_COST),
       }),
@@ -1616,15 +1635,17 @@ describe('database schema and seed', () => {
   });
   afterAll(async () => ctx.close());
 
-  it('seeds both roles and the three demo users', async () => {
+  it('seeds both roles and the five demo users (2 admins, 3 employees)', async () => {
     const roles = await ctx.dataSource.getRepository(Role).find({ order: { code: 'ASC' } });
     expect(roles.map((r) => r.code)).toEqual(['ADMIN', 'EMPLOYEE']);
 
     const users = await ctx.dataSource.getRepository(User).find();
     expect(users.map((u) => u.email).sort()).toEqual(DEMO_USERS.map((u) => u.email).sort());
-    expect(users.filter((u) => u.role.code === 'ADMIN')).toHaveLength(1);
-    expect(users.filter((u) => u.role.code === 'EMPLOYEE')).toHaveLength(2);
+    expect(users.filter((u) => u.role.code === 'ADMIN')).toHaveLength(2);
+    expect(users.filter((u) => u.role.code === 'EMPLOYEE')).toHaveLength(3);
     expect(users.every((u) => u.passwordHash.startsWith('$2'))).toBe(true);
+    expect(users.every((u) => Boolean(u.phone))).toBe(true);
+    expect(users.every((u) => u.isDefault)).toBe(true);
   });
 
   it('is idempotent: running the seed twice creates no duplicates', async () => {
@@ -1634,7 +1655,7 @@ describe('database schema and seed', () => {
 
     await runSeed(ctx.dataSource, { sampleTasks: true });
 
-    expect(await ctx.dataSource.getRepository(User).count()).toBe(3);
+    expect(await ctx.dataSource.getRepository(User).count()).toBe(5);
     expect(await ctx.dataSource.getRepository(Role).count()).toBe(2);
     expect(await ctx.dataSource.getRepository(Task).count()).toBe(tasksAfterFirst);
     expect(await ctx.dataSource.getRepository(TaskStatusHistory).count()).toBe(historyAfterFirst);
