@@ -13,6 +13,17 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { ListTasksQueryDto } from './dto/list-tasks-query.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { TaskResponse, toTaskResponse } from './task.mapper';
+import { evaluateTransition, TransitionDecision } from './task-state-machine';
+import { TransitionTaskDto } from './dto/transition-task.dto';
+
+export interface HistoryEntry {
+  id: number;
+  fromStatus: TaskStatus | null;
+  toStatus: TaskStatus;
+  note: string | null;
+  actor: { id: number; name: string };
+  createdAt: Date;
+}
 
 @Injectable()
 export class TasksService {
@@ -115,5 +126,71 @@ export class TasksService {
   async remove(admin: AuthUser, id: number): Promise<void> {
     await this.getForViewer(admin, id);
     await this.tasks.softDelete(id);
+  }
+
+  async transition(user: AuthUser, id: number, dto: TransitionTaskDto): Promise<TaskResponse> {
+    const task = await this.getForViewer(user, id);
+
+    const decision = evaluateTransition({
+      role: user.role,
+      isAssignee: task.assigneeId === user.id,
+      from: task.status,
+      to: dto.to,
+      note: dto.note,
+    });
+    if (!decision.allowed) throw this.toTransitionException(decision, task.status, dto.to);
+
+    const from = task.status;
+    const note = dto.note?.trim() || null;
+
+    await this.dataSource.transaction(async (em) => {
+      // Compare-and-set on the status we validated against. If anyone changed the task since we read it, zero rows
+      // match and we fail instead of writing a history row for a transition that did not happen.
+      const result = await em
+        .getRepository(Task)
+        .createQueryBuilder()
+        .update()
+        .set({ status: dto.to })
+        .where('id = :id AND status = :from AND deleted_at IS NULL', { id, from })
+        .execute();
+      if (result.affected !== 1) {
+        throw AppException.stateConflict('This task was just updated by someone else. Please refresh and try again.');
+      }
+      await em.getRepository(TaskStatusHistory).insert({ taskId: id, fromStatus: from, toStatus: dto.to, actorId: user.id, note });
+    });
+
+    return this.getResponse(user, id);
+  }
+
+  async listHistory(user: AuthUser, id: number): Promise<HistoryEntry[]> {
+    await this.getForViewer(user, id);
+    const rows = await this.dataSource
+      .getRepository(TaskStatusHistory)
+      .createQueryBuilder('history')
+      .innerJoinAndSelect('history.actor', 'actor')
+      .where('history.taskId = :id', { id })
+      .orderBy('history.createdAt', 'ASC')
+      .addOrderBy('history.id', 'ASC')
+      .getMany();
+
+    return rows.map((row) => ({
+      id: row.id,
+      fromStatus: row.fromStatus,
+      toStatus: row.toStatus,
+      note: row.note,
+      actor: { id: row.actor.id, name: row.actor.name },
+      createdAt: row.createdAt,
+    }));
+  }
+
+  private toTransitionException(decision: Extract<TransitionDecision, { allowed: false }>, from: TaskStatus, to: TaskStatus): AppException {
+    switch (decision.reason) {
+      case 'INVALID_TRANSITION':
+        return AppException.invalidTransition(`A task cannot move from ${from} to ${to}`);
+      case 'NOTE_REQUIRED':
+        return AppException.validation([{ field: 'note', message: 'A reason is required when rejecting a task' }]);
+      case 'FORBIDDEN':
+        return AppException.forbidden('You are not allowed to make this status change');
+    }
   }
 }
