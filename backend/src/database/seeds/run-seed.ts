@@ -2,9 +2,8 @@ import * as bcrypt from 'bcrypt';
 import { DataSource } from 'typeorm';
 import { TaskStatus } from '../../common/enums/task-status.enum';
 import { Role, Task, TaskStatusHistory, User } from '../entities';
+import { BCRYPT_COST } from '../../modules/security/password.constants';
 import { DEMO_USERS, SAMPLE_TASKS, SEED_ROLES } from './demo-data';
-
-export const BCRYPT_COST = 12;
 
 /** The ordered statuses a task passes through to reach `target`, starting from PENDING. */
 function pathTo(target: TaskStatus): TaskStatus[] {

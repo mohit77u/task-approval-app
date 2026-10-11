@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { Env, validateEnv } from './config/env.validation';
 import { buildDataSourceOptions } from './database/typeorm.options';
+import { SecurityModule } from './modules/security/security.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { buildDataSourceOptions } from './database/typeorm.options';
           DB_SSL_CA: config.get('DB_SSL_CA', { infer: true }),
         }),
     }),
+    SecurityModule,
   ],
 })
 export class AppModule implements NestModule {

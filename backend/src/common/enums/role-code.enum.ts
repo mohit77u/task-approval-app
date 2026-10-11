@@ -10,3 +10,7 @@ export const RoleCode = {
 export type RoleCode = (typeof RoleCode)[keyof typeof RoleCode];
 
 export const ROLE_CODES: readonly RoleCode[] = Object.values(RoleCode);
+
+export function isRoleCode(value: string): value is RoleCode {
+  return (ROLE_CODES as readonly string[]).includes(value);
+}
