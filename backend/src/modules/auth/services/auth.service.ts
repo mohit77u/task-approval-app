@@ -4,8 +4,8 @@ import { IsNull, Repository } from 'typeorm';
 import { isRoleCode } from '../../../common/enums/role-code.enum';
 import { AppException } from '../../../common/errors/app.exception';
 import { User } from '../../users/entities/user.entity';
-import { PasswordService } from '../../security/services/password.service';
-import { TokenService } from '../../security/services/token.service';
+import { PasswordService } from '../../../security/services/password.service';
+import { TokenService } from '../../../security/services/token.service';
 import { toUserSummary, UserSummary } from '../../users/mappers/user.mapper';
 import { ClientMeta, RefreshTokenService } from './refresh-token.service';
 

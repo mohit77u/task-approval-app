@@ -13,7 +13,6 @@ import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Public } from '../../../common/decorators/public.decorator';
 import { AppException } from '../../../common/errors/app.exception';
 import type { AuthUser } from '../../../common/types/request.types';
 import { Env } from '../../../config/env.validation';
@@ -23,7 +22,7 @@ import {
   buildCookieOptions,
   clearOptions,
   REFRESH_COOKIE,
-} from '../../security/utils/cookie.options';
+} from '../../../security/utils/cookie.options';
 import { UserSummary } from '../../users/mappers/user.mapper';
 import { AuthService } from '../services/auth.service';
 import { LoginDto } from '../dto/login.dto';
@@ -54,7 +53,6 @@ export class AuthController {
     });
   }
 
-  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
@@ -73,7 +71,6 @@ export class AuthController {
     return { user: session.user };
   }
 
-  @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
@@ -97,8 +94,7 @@ export class AuthController {
     }
   }
 
-  // Public on purpose: logging out must work after the access token expired. It only needs the refresh cookie.
-  @Public()
+  // Excluded from JWT auth in AppModule on purpose: logging out must work after the access token expired. It only needs the refresh cookie.
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(

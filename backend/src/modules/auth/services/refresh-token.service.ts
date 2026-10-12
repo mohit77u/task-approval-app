@@ -14,7 +14,7 @@ import { RefreshToken } from '../entities/refresh-token.entity';
 import {
   generateRefreshToken,
   hashRefreshToken,
-} from '../../security/utils/refresh-token.util';
+} from '../../../security/utils/refresh-token.util';
 
 export interface ClientMeta {
   userAgent?: string;

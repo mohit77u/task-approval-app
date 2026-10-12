@@ -1,9 +1,9 @@
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { ErrorCode } from '../../../common/errors/error-codes';
-import { AppException } from '../../../common/errors/app.exception';
-import { RoleCode } from '../../../common/enums/role-code.enum';
-import { Env } from '../../../config/env.validation';
+import { ErrorCode } from '../../common/errors/error-codes';
+import { AppException } from '../../common/errors/app.exception';
+import { RoleCode } from '../../common/enums/role-code.enum';
+import { Env } from '../../config/env.validation';
 import { TokenService } from './token.service';
 
 const SECRET = 'unit-test-secret-unit-test-secret-0123456789';

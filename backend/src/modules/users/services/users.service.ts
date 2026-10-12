@@ -13,7 +13,7 @@ import { RefreshToken } from '../../auth/entities/refresh-token.entity';
 import { Role } from '../entities/role.entity';
 import { Task } from '../../tasks/entities/task.entity';
 import { User } from '../entities/user.entity';
-import { PasswordService } from '../../security/services/password.service';
+import { PasswordService } from '../../../security/services/password.service';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { ListUsersQueryDto } from '../dto/list-users-query.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';

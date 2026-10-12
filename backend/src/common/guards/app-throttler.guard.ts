@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { AuthUser } from '../../../common/types/request.types';
+import { AuthUser } from '../types/request.types';
 
 interface TrackedRequest {
   ip?: string;

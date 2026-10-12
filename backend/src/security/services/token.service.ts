@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
-import { isRoleCode, RoleCode } from '../../../common/enums/role-code.enum';
-import { AppException } from '../../../common/errors/app.exception';
-import { AuthUser } from '../../../common/types/request.types';
-import { Env } from '../../../config/env.validation';
+import { isRoleCode, RoleCode } from '../../common/enums/role-code.enum';
+import { AppException } from '../../common/errors/app.exception';
+import { AuthUser } from '../../common/types/request.types';
+import { Env } from '../../config/env.validation';
 
 interface AccessPayload {
   sub: unknown;

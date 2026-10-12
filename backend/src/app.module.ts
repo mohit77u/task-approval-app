@@ -1,8 +1,15 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { forceUtcSession } from './database/utc-session';
+import { JwtAuthMiddleware } from './common/middleware/jwt-auth.middleware';
+import { OriginMiddleware } from './common/middleware/origin.middleware';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { Env, validateEnv } from './config/env.validation';
 import { buildDataSourceOptions } from './database/typeorm.options';
@@ -12,7 +19,7 @@ import { HealthModule } from './modules/health/health.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { UsersModule } from './modules/users/users.module';
-import { SecurityModule } from './modules/security/security.module';
+import { SecurityModule } from './security/security.module';
 
 @Module({
   imports: [
@@ -47,6 +54,16 @@ import { SecurityModule } from './modules/security/security.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestIdMiddleware).forRoutes('*');
+    consumer.apply(RequestIdMiddleware, OriginMiddleware).forRoutes('*');
+    // Everything is authenticated unless listed here. Refresh and logout must work with an expired access token.
+    consumer
+      .apply(JwtAuthMiddleware)
+      .exclude(
+        { path: 'auth/login', method: RequestMethod.POST },
+        { path: 'auth/refresh', method: RequestMethod.POST },
+        { path: 'auth/logout', method: RequestMethod.POST },
+        { path: 'health', method: RequestMethod.GET },
+      )
+      .forRoutes('*');
   }
 }

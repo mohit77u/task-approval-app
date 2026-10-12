@@ -3,11 +3,9 @@ import { ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { Public } from '../../../common/decorators/public.decorator';
 
 /** Target of Render's health check and the uptime ping that keeps the free instance warm. */
 @ApiTags('health')
-@Public()
 @SkipThrottle()
 @Controller('health')
 export class HealthController {
