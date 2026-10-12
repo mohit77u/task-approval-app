@@ -1,4 +1,5 @@
 import { Pencil, Trash2 } from 'lucide-react';
+import { DisabledReason } from '@/components/common/DisabledReason';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -13,9 +14,10 @@ interface UsersTableProps {
 }
 
 /** Why Delete is unavailable for a row, or undefined when it is allowed. The backend enforces the same rules (and the "has tasks" one). */
-function deleteBlockedReason(user: User, currentUserId: number): string | undefined {
-  if (user.isDefault) return 'Default accounts cannot be deleted';
-  if (user.id === currentUserId) return 'You cannot delete your own account';
+function deleteBlockedReason(user: User, currentUserId: number, isDeleting: boolean): string | undefined {
+  if (user.isDefault) return "Default accounts can't be deleted";
+  if (user.id === currentUserId) return "You can't delete your own account";
+  if (isDeleting) return 'Deleting…';
   return undefined;
 }
 
@@ -34,7 +36,7 @@ export function UsersTable({ users, currentUserId, isDeleting, onEdit, onDelete 
         </TableHeader>
         <TableBody>
           {users.map((user) => {
-            const blocked = deleteBlockedReason(user, currentUserId);
+            const blocked = deleteBlockedReason(user, currentUserId, isDeleting);
             return (
               <TableRow key={user.id}>
                 <TableCell className="font-medium">
@@ -50,16 +52,11 @@ export function UsersTable({ users, currentUserId, isDeleting, onEdit, onDelete 
                   <Button variant="ghost" size="icon" aria-label={`Edit ${user.name}`} onClick={() => onEdit(user)}>
                     <Pencil className="h-4 w-4" aria-hidden />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Delete ${user.name}`}
-                    title={blocked}
-                    disabled={Boolean(blocked) || isDeleting}
-                    onClick={() => onDelete(user)}
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden />
-                  </Button>
+                  <DisabledReason reason={blocked}>
+                    <Button variant="ghost" size="icon" aria-label={`Delete ${user.name}`} disabled={Boolean(blocked)} onClick={() => onDelete(user)}>
+                      <Trash2 className="h-4 w-4" aria-hidden />
+                    </Button>
+                  </DisabledReason>
                 </TableCell>
               </TableRow>
             );

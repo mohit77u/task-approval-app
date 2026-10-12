@@ -4,6 +4,7 @@ import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { DisabledReason } from '@/components/common/DisabledReason';
 import { ErrorState } from '@/components/common/ErrorState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatusBadge } from '@/components/common/StatusBadge';
@@ -93,14 +94,18 @@ export default function TaskDetailPage(): React.JSX.Element {
             <StatusBadge status={data.status} />
             {isAdmin && (
               <>
-                <Button variant="outline" size="sm" disabled={data.status === 'COMPLETED' || isPending} onClick={() => setEditOpen(true)}>
-                  <Pencil className="mr-1 h-4 w-4" aria-hidden />
-                  Edit
-                </Button>
-                <Button variant="outline" size="sm" className="text-destructive" disabled={isPending} onClick={() => void onDelete()}>
-                  <Trash2 className="mr-1 h-4 w-4" aria-hidden />
-                  Delete
-                </Button>
+                <DisabledReason reason={data.status === 'COMPLETED' ? "Completed tasks can't be edited" : isPending ? 'Please wait…' : undefined}>
+                  <Button variant="outline" size="sm" disabled={data.status === 'COMPLETED' || isPending} onClick={() => setEditOpen(true)}>
+                    <Pencil className="mr-1 h-4 w-4" aria-hidden />
+                    Edit
+                  </Button>
+                </DisabledReason>
+                <DisabledReason reason={isPending ? 'Please wait…' : undefined}>
+                  <Button variant="outline" size="sm" className="text-destructive" disabled={isPending} onClick={() => void onDelete()}>
+                    <Trash2 className="mr-1 h-4 w-4" aria-hidden />
+                    Delete
+                  </Button>
+                </DisabledReason>
               </>
             )}
           </>

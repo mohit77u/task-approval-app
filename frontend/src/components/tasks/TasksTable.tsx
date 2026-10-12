@@ -1,6 +1,7 @@
 import { MoreHorizontal } from 'lucide-react';
 import Link from 'next/link';
 import { PriorityBadge } from '@/components/common/PriorityBadge';
+import { DisabledReason } from '@/components/common/DisabledReason';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -66,12 +67,16 @@ export function TasksTable({ tasks, isAdmin, isDeleting = false, onEdit, onDelet
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem disabled={task.status === 'COMPLETED'} onSelect={() => onEdit(task)}>
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem disabled={isDeleting} className="text-destructive focus:text-destructive" onSelect={() => onDelete(task)}>
-                          Delete
-                        </DropdownMenuItem>
+                        <DisabledReason reason={task.status === 'COMPLETED' ? "Completed tasks can't be edited" : undefined} focusable={false}>
+                          <DropdownMenuItem disabled={task.status === 'COMPLETED'} onSelect={() => onEdit(task)}>
+                            Edit
+                          </DropdownMenuItem>
+                        </DisabledReason>
+                        <DisabledReason reason={isDeleting ? 'Deleting…' : undefined} focusable={false}>
+                          <DropdownMenuItem disabled={isDeleting} className="text-destructive focus:text-destructive" onSelect={() => onDelete(task)}>
+                            Delete
+                          </DropdownMenuItem>
+                        </DisabledReason>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
