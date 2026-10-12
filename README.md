@@ -91,17 +91,17 @@ See [`backend/README.md`](backend/README.md) and [`frontend/README.md`](frontend
 
 ## Run it locally
 
-Prerequisites: Node.js 20+, npm, and a MySQL 8 database (local MySQL/XAMPP, a hosted one, or the Docker container below).
+Prerequisites: Node.js 20+, npm, and a MySQL 8 (or MariaDB 10.x) database: a local MySQL/XAMPP install or a hosted one such as Aiven.
 
 ```bash
 git clone https://github.com/mohit77u/task-approval-app.git task-approval-app && cd task-approval-app
 
-# 0. Database (skip if you already have a MySQL 8 you can use)
-docker compose up -d mysql      # creates database `taskapp`, user `taskapp` (see docker-compose.yml)
+# 0. Database: create an empty database and a user for it (the app creates the tables, not the database)
+#    mysql -u root -p -e "CREATE DATABASE taskapp CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER 'taskapp'@'localhost' IDENTIFIED BY 'choose-a-password'; GRANT ALL ON taskapp.* TO 'taskapp'@'localhost';"
 
 # 1. Backend
 cd backend
-cp .env.example .env            # defaults match the Docker container; set a real JWT_ACCESS_SECRET
+cp .env.example .env            # set DB_USER / DB_PASSWORD to your database user and a real JWT_ACCESS_SECRET
 npm ci
 npm run migration:run           # create the schema
 npm run seed                    # roles, 5 demo users, sample tasks (safe to re-run)

@@ -256,7 +256,7 @@ direct cross-origin calls work, but this mode is documented as unsupported for S
 |---|---|---|
 | FE | `http://localhost:3000` | `https://<app>.vercel.app` |
 | BE | `http://localhost:4000` | `https://<api>.onrender.com` |
-| DB | docker-compose MySQL, `DB_SSL=false` | Aiven MySQL over TLS, `DB_SSL=true` with `DB_SSL_CA` |
+| DB | local MySQL, `DB_SSL=false` | Aiven MySQL over TLS, `DB_SSL=true` with `DB_SSL_CA` |
 | `BACKEND_URL` | `http://localhost:4000` | the Render URL |
 | `FRONTEND_ORIGINS` | `http://localhost:3000` | the Vercel URL |
 | `COOKIE_SECURE` | `false` | `true` |
@@ -391,7 +391,6 @@ production DB; run the full reviewer flow on the live URL.
 task-approval-app/
   README.md                 overview, architecture, demo accounts, deploy steps, limitations
   docs/AI-USAGE.md          AI tools used and what was personally verified
-  docker-compose.yml        optional local MySQL
   frontend/                 README.md, .env.example
   backend/                  README.md, .env.example
 ```
