@@ -127,4 +127,26 @@
   html {
     @apply font-sans;
   }
+  /* Tailwind v4's preflight resets buttons to the default cursor; restore a pointer on everything clickable. */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='tab'],
+  [role='option']:not([aria-disabled='true']),
+  [role='menuitem']:not([aria-disabled='true']),
+  [role='combobox']:not(:disabled),
+  [role='checkbox'],
+  [role='switch'],
+  a[href],
+  summary,
+  label[for],
+  select:not(:disabled),
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled) {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled='true'],
+  [data-disabled] {
+    cursor: not-allowed;
+  }
 }
