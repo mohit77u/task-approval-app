@@ -16,7 +16,7 @@ async function signIn(page: Page, account: { email: string; password: string }):
 async function changeStatus(page: Page, option: string, confirmLabel: string, note?: string): Promise<void> {
   await page.getByLabel('Status', { exact: true }).click();
   await page.getByRole('option', { name: option, exact: true }).click();
-  if (note) await page.getByLabel(/^(Reason for rejection|Note \(optional\))$/).fill(note);
+  if (note) await page.getByLabel(/^(Reason for rejection|Note \(optional\))\s*\*?$/).fill(note);
   await page.getByRole('button', { name: confirmLabel, exact: true }).click();
 }
 

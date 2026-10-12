@@ -62,9 +62,13 @@ export function ConfirmProvider({ children }: { children: ReactNode }): React.JS
           </DialogHeader>
           {options?.note && (
             <div className="space-y-2">
-              <Label htmlFor="confirm-note">{options.note.label}</Label>
+              {/* Only mark the note required when Confirm is actually gated on it. */}
+              <Label htmlFor="confirm-note" required={options.note.required}>
+                {options.note.label}
+              </Label>
               <Textarea
                 id="confirm-note"
+                required={options.note.required}
                 value={note}
                 maxLength={1000}
                 placeholder={options.note.placeholder}

@@ -4,7 +4,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -12,20 +11,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { applyFieldErrors, useApiAction } from '@/hooks/useApiAction';
+import { todayAsDateString } from '@/lib/dates';
+import { makeTaskSchema, TaskFormValues as FormValues } from '@/lib/taskFormSchema';
 import { PRIORITY_LABEL, PRIORITY_ORDER } from '@/lib/constants';
 import { useCreateTaskMutation, useUpdateTaskMutation } from '@/services/api/tasksApi';
 import { useListUsersQuery } from '@/services/api/usersApi';
 import { Task } from '@/types/api';
-
-const schema = z.object({
-  title: z.string().trim().min(1, 'Enter a title').max(200, 'Keep the title under 200 characters'),
-  description: z.string().trim().min(1, 'Enter a description').max(5000, 'Keep the description under 5000 characters'),
-  priority: z.enum(['LOW', 'MEDIUM', 'HIGH']),
-  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Choose a due date'),
-  // Kept as a string because the Select works with strings; converted to a number on submit.
-  assigneeId: z.string().min(1, 'Choose an employee'),
-});
-type FormValues = z.infer<typeof schema>;
 
 const FIELDS = ['title', 'description', 'priority', 'dueDate', 'assigneeId'] as const;
 
@@ -40,7 +31,7 @@ function TaskForm({ task, onDone, onPendingChange }: { task?: Task; onDone: () =
   const { run, isPending } = useApiAction();
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(makeTaskSchema(task?.dueDate)),
     defaultValues: {
       title: task?.title ?? '',
       description: task?.description ?? '',
@@ -67,24 +58,30 @@ function TaskForm({ task, onDone, onPendingChange }: { task?: Task; onDone: () =
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
       <div className="space-y-2">
-        <Label htmlFor="title">Title</Label>
-        <Input id="title" maxLength={200} aria-invalid={Boolean(errors.title)} {...form.register('title')} />
+        <Label htmlFor="title" required>
+          Title
+        </Label>
+        <Input id="title" required maxLength={200} aria-invalid={Boolean(errors.title)} {...form.register('title')} />
         <FieldError message={errors.title?.message} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="description">Description</Label>
-        <Textarea id="description" rows={4} aria-invalid={Boolean(errors.description)} {...form.register('description')} />
+        <Label htmlFor="description" required>
+          Description
+        </Label>
+        <Textarea id="description" required rows={4} aria-invalid={Boolean(errors.description)} {...form.register('description')} />
         <FieldError message={errors.description?.message} />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="priority">Priority</Label>
+        <div className="min-w-0 space-y-2">
+          <Label htmlFor="priority" required>
+            Priority
+          </Label>
           <Controller
             control={form.control}
             name="priority"
             render={({ field }) => (
               <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger id="priority">
+                <SelectTrigger id="priority" aria-required className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -99,20 +96,24 @@ function TaskForm({ task, onDone, onPendingChange }: { task?: Task; onDone: () =
           />
           <FieldError message={errors.priority?.message} />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="dueDate">Due date</Label>
-          <Input id="dueDate" type="date" aria-invalid={Boolean(errors.dueDate)} {...form.register('dueDate')} />
+        <div className="min-w-0 space-y-2">
+          <Label htmlFor="dueDate" required>
+            Due date
+          </Label>
+          <Input id="dueDate" type="date" required className="w-full" min={task ? undefined : todayAsDateString()} aria-invalid={Boolean(errors.dueDate)} {...form.register('dueDate')} />
           <FieldError message={errors.dueDate?.message} />
         </div>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="assigneeId">Assignee</Label>
+        <Label htmlFor="assigneeId" required>
+          Assignee
+        </Label>
         <Controller
           control={form.control}
           name="assigneeId"
           render={({ field }) => (
             <Select value={field.value} onValueChange={field.onChange} disabled={employees.isLoading}>
-              <SelectTrigger id="assigneeId">
+              <SelectTrigger id="assigneeId" aria-required className="w-full">
                 <SelectValue placeholder={employees.isLoading ? 'Loading employees…' : 'Select an employee'} />
               </SelectTrigger>
               <SelectContent>

@@ -7,6 +7,7 @@ import { ErrorState } from '@/components/common/ErrorState';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useApiAction } from '@/hooks/useApiAction';
 import { formatRelative } from '@/lib/dates';
@@ -58,10 +59,10 @@ export function CommentsPanel({ taskId }: { taskId: number }): React.JSX.Element
       )}
 
       <form onSubmit={(event) => void onSubmit(event)} className="space-y-2">
-        <label htmlFor="new-comment" className="text-sm font-medium">
+        <Label htmlFor="new-comment" required>
           Add a comment
-        </label>
-        <Textarea id="new-comment" rows={3} disabled={isPending} maxLength={MAX_LENGTH} value={body} onChange={(event) => setBody(event.target.value)} />
+        </Label>
+        <Textarea id="new-comment" required rows={3} disabled={isPending} maxLength={MAX_LENGTH} value={body} onChange={(event) => setBody(event.target.value)} />
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">
             {body.length}/{MAX_LENGTH}

@@ -55,6 +55,14 @@ function UserForm({ user, onDone, onPendingChange }: { user?: User; onDone: () =
   });
   const { errors } = form.formState;
 
+  // Preselect Employee (looked up by code, ids are not stable) once roles load; never overrides a choice the user already made.
+  const employeeRoleId = roles.data?.find((role) => role.code === 'EMPLOYEE')?.id;
+  const { getValues, setValue } = form;
+  useEffect(() => {
+    if (isEdit || employeeRoleId === undefined || getValues('roleId') !== '') return;
+    setValue('roleId', String(employeeRoleId), { shouldValidate: false });
+  }, [isEdit, employeeRoleId, getValues, setValue]);
+
   // Lift the pending flag so the dialog can refuse to close mid-request.
   useEffect(() => {
     onPendingChange(isPending);
@@ -85,13 +93,17 @@ function UserForm({ user, onDone, onPendingChange }: { user?: User; onDone: () =
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
       <div className="space-y-2">
-        <Label htmlFor="user-name">Name</Label>
-        <Input id="user-name" aria-invalid={Boolean(errors.name)} {...form.register('name')} />
+        <Label htmlFor="user-name" required>
+          Name
+        </Label>
+        <Input id="user-name" required aria-invalid={Boolean(errors.name)} {...form.register('name')} />
         <FieldError message={errors.name?.message} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="user-email">Email</Label>
-        <Input id="user-email" type="email" autoComplete="off" aria-invalid={Boolean(errors.email)} {...form.register('email')} />
+        <Label htmlFor="user-email" required>
+          Email
+        </Label>
+        <Input id="user-email" type="email" required autoComplete="off" aria-invalid={Boolean(errors.email)} {...form.register('email')} />
         <FieldError message={errors.email?.message} />
       </div>
       <div className="space-y-2">
@@ -100,18 +112,22 @@ function UserForm({ user, onDone, onPendingChange }: { user?: User; onDone: () =
         <FieldError message={errors.phone?.message} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="user-password">{isEdit ? 'New password (leave blank to keep the current one)' : 'Temporary password'}</Label>
-        <Input id="user-password" type="password" autoComplete="new-password" aria-invalid={Boolean(errors.password)} {...form.register('password')} />
+        <Label htmlFor="user-password" required={!isEdit}>
+          {isEdit ? 'New password (leave blank to keep the current one)' : 'Temporary password'}
+        </Label>
+        <Input id="user-password" type="password" required={!isEdit} autoComplete="new-password" aria-invalid={Boolean(errors.password)} {...form.register('password')} />
         <FieldError message={errors.password?.message} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="user-role">Role</Label>
+        <Label htmlFor="user-role" required={!isEdit}>
+          Role
+        </Label>
         <Controller
           control={form.control}
           name="roleId"
           render={({ field }) => (
             <Select value={field.value} onValueChange={field.onChange} disabled={isEdit || roles.isLoading}>
-              <SelectTrigger id="user-role">
+              <SelectTrigger id="user-role" aria-required={!isEdit} className="w-full">
                 <SelectValue placeholder={roles.isLoading ? 'Loading roles…' : 'Select a role'} />
               </SelectTrigger>
               <SelectContent>

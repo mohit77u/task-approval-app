@@ -59,13 +59,17 @@ export default function LoginPage(): React.JSX.Element {
           <CardContent>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" autoComplete="username" aria-invalid={Boolean(form.formState.errors.email)} {...form.register('email')} />
+                <Label htmlFor="email" required>
+                  Email
+                </Label>
+                <Input id="email" type="email" required autoComplete="username" aria-invalid={Boolean(form.formState.errors.email)} {...form.register('email')} />
                 {form.formState.errors.email && <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input id="password" type="password" autoComplete="current-password" aria-invalid={Boolean(form.formState.errors.password)} {...form.register('password')} />
+                <Label htmlFor="password" required>
+                  Password
+                </Label>
+                <Input id="password" type="password" required autoComplete="current-password" aria-invalid={Boolean(form.formState.errors.password)} {...form.register('password')} />
                 {form.formState.errors.password && <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>}
               </div>
               <Button type="submit" className="w-full" disabled={isPending}>
