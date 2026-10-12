@@ -142,7 +142,7 @@ cd frontend && npx playwright install chromium
 E2E_BASE_URL=http://localhost:3000 npm run e2e
 ```
 
-Static checks: `cd backend && npm run build` and `npm run lint` (note: `lint` runs ESLint with `--fix`); `cd frontend && npm run typecheck && npm run lint`.
+Static checks: `cd backend && npm run build` and `npm run lint` (note: `lint` runs ESLint with `--fix`); `cd frontend && npm run lint && npm run typecheck`. On a fresh clone run `npm run dev` or `npm run build` once in `frontend/` before `typecheck`: it relies on route types (`LayoutProps`) that Next.js generates into `.next/`.
 
 ## Security notes
 

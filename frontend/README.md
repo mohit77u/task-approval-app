@@ -10,7 +10,7 @@ Next.js (App Router) + TypeScript, Tailwind, shadcn/ui, Redux Toolkit + RTK Quer
 | `npm run build` / `npm start` | Production build / server. `BACKEND_URL` must be set when building: the build fails without it |
 | `npm test` | Unit tests (Vitest) |
 | `npm run e2e` | Playwright workflow test; needs backend + frontend running, `E2E_BASE_URL` selects the target (default `http://localhost:3000`). First run `npx playwright install chromium` |
-| `npm run typecheck` / `npm run lint` | Static checks |
+| `npm run typecheck` / `npm run lint` | Static checks. Run `npm run dev` or `npm run build` once first on a fresh clone: `typecheck` needs the route types Next generates in `.next/` |
 
 ## How API calls work
 
