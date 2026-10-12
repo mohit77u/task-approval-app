@@ -120,9 +120,10 @@ export class UsersService {
    * and the email stays reserved (the unique index still covers it). Refresh tokens are revoked here and the auth
    * middleware refuses the user's access tokens from the next request on.
    *
-   * Check and delete run in one transaction holding the user row's write lock. Task creation and reassignment take a
-   * shared lock on the same row (see `ensureAssignableEmployee`), so a task cannot be assigned to this user between the
-   * count and the delete.
+   * Check and delete run in one transaction holding the user row's lock. Task creation and reassignment lock the same
+   * row (see `ensureAssignableEmployee`), so a task cannot be assigned to this user between the count and the delete.
+   * All locks here are FOR UPDATE: TypeORM renders shared locks as FOR SHARE on MySQL 8-style versions, which MariaDB
+   * (common for local setups) rejects.
    */
   async remove(actorId: number, id: number): Promise<void> {
     if (actorId === id)
@@ -142,12 +143,12 @@ export class UsersService {
       // Every live task counts, whatever its status (COMPLETED included), so the admin decides what happens to that
       // work first. Soft-deleted tasks do not block: the admin already removed them, and because deleting the user is
       // itself a soft delete, their history keeps a valid author. A locking read, so it sees tasks committed by
-      // transactions that held the user row before us.
+      // transactions that held the user row before us rather than this transaction's snapshot.
       const assigned = await em
         .getRepository(Task)
         .createQueryBuilder('task')
         .where('task.assigneeId = :id', { id })
-        .setLock('pessimistic_read')
+        .setLock('pessimistic_write')
         .getCount();
       if (assigned > 0) {
         throw AppException.conflict(
@@ -162,9 +163,9 @@ export class UsersService {
 
   /**
    * Tasks can only be assigned to existing employees. Reported against the `assigneeId` field so forms can show it
-   * inline. Pass the caller's transaction manager: the shared row lock then holds until that transaction commits, so a
-   * concurrent user delete (which takes the write lock) either waits and then sees the new task, or wins first and this
-   * read sees the user as deleted.
+   * inline. Pass the caller's transaction manager: the row lock then holds until that transaction commits, so a
+   * concurrent user delete (which locks the same row) either waits and then sees the new task, or wins first and this
+   * read sees the user as deleted. Concurrent task writes for the same assignee are briefly serialised as a result.
    */
   async ensureAssignableEmployee(
     userId: number,
@@ -172,8 +173,8 @@ export class UsersService {
   ): Promise<User> {
     const user = await em.getRepository(User).findOne({
       where: { id: userId, deletedAt: IsNull() },
-      lock: { mode: 'pessimistic_read' },
-      // Lock only the user row, not the shared role row (MySQL cannot restrict FOR SHARE to one table of a join).
+      lock: { mode: 'pessimistic_write' },
+      // Lock only the user row, not the role row every user shares (MySQL cannot restrict a lock to one joined table).
       loadEagerRelations: false,
     });
     const role = user

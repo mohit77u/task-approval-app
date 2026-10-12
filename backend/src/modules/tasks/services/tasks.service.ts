@@ -116,7 +116,7 @@ export class TasksService {
 
   async create(admin: AuthUser, dto: CreateTaskDto): Promise<TaskResponse> {
     const id = await this.dataSource.transaction(async (em) => {
-      // Inside the transaction so the assignee row stays share-locked until the task is committed (see UsersService.remove).
+      // Inside the transaction so the assignee row stays locked until the task is committed (see UsersService.remove).
       await this.users.ensureAssignableEmployee(dto.assigneeId, em);
       const task = await em.getRepository(Task).save(
         em.getRepository(Task).create({

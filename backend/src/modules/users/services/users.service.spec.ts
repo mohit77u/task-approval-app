@@ -137,7 +137,7 @@ describe('UsersService.remove', () => {
     await service.remove(1, 9);
 
     expect(calls.inTransaction).toBe(true);
-    expect(calls.lockModes).toEqual(['pessimistic_write', 'pessimistic_read']);
+    expect(calls.lockModes).toEqual(['pessimistic_write', 'pessimistic_write']);
     expect(calls.userUpdates).toHaveLength(1);
     expect(calls.userUpdates[0].deletedAt).toBeInstanceOf(Date);
     expect(calls.revokedFor).toEqual([9]);
