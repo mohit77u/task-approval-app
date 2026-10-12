@@ -6,6 +6,7 @@ import { AttentionList } from '@/components/dashboard/AttentionList';
 import { StatusCard } from '@/components/dashboard/StatusCard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/hooks/useAuth';
+import { ATTENTION_LIMIT, attentionStatuses, mergeAttention } from '@/lib/attention';
 import { STATUS_ORDER } from '@/lib/constants';
 import { useGetDashboardQuery } from '@/services/api/dashboardApi';
 import { useListTasksQuery } from '@/services/api/tasksApi';
@@ -13,10 +14,14 @@ import { useListTasksQuery } from '@/services/api/tasksApi';
 export default function DashboardPage(): React.JSX.Element {
   const { user, isAdmin } = useAuth();
   const dashboard = useGetDashboardQuery();
-  // Admins act on submitted work; employees act on tasks they have not started yet.
-  const attentionStatus = isAdmin ? 'PENDING_APPROVAL' : 'PENDING';
+  // Admins act on submitted work; employees on tasks not started yet plus ones sent back to them by a rejection.
+  const [firstStatus, secondStatus] = attentionStatuses(isAdmin);
   // Skipped until the user (and so the role) is known, otherwise the employee default would fire for an admin.
-  const attention = useListTasksQuery({ status: attentionStatus, page: 1, limit: 5 }, { skip: !user });
+  const first = useListTasksQuery({ status: firstStatus, page: 1, limit: ATTENTION_LIMIT }, { skip: !user });
+  const second = useListTasksQuery({ status: secondStatus, page: 1, limit: ATTENTION_LIMIT }, { skip: !user || !secondStatus });
+  const attentionError = first.isError ? first : second.isError ? second : undefined;
+  const attentionTasks = mergeAttention([first.data?.items, second.data?.items]);
+  const attentionReady = Boolean(first.data) && (!secondStatus || Boolean(second.data));
 
   return (
     <div>
@@ -36,14 +41,14 @@ export default function DashboardPage(): React.JSX.Element {
       )}
 
       <div className="mt-8">
-        {attention.isError ? (
-          <ErrorState message={attention.error.message} onRetry={() => void attention.refetch()} />
-        ) : attention.data ? (
+        {attentionError?.isError ? (
+          <ErrorState message={attentionError.error.message} onRetry={() => void attentionError.refetch()} />
+        ) : attentionReady ? (
           <AttentionList
-            title={isAdmin ? 'Awaiting your approval' : 'Waiting for you to start'}
-            description={isAdmin ? 'Tasks employees have submitted for review.' : 'Assigned to you and not started yet.'}
-            tasks={attention.data.items}
-            viewAllHref={`/tasks?status=${attentionStatus}`}
+            title={isAdmin ? 'Awaiting your approval' : 'Needs your action'}
+            description={isAdmin ? 'Tasks employees have submitted for review.' : 'Assigned to you: not started yet, or sent back for changes.'}
+            tasks={attentionTasks}
+            viewAllHref={isAdmin ? '/tasks?status=PENDING_APPROVAL' : '/tasks'}
             showAssignee={isAdmin}
           />
         ) : (
