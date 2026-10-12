@@ -21,7 +21,8 @@
 
 - Automated: backend and frontend unit tests, type checks, lint and builds were run during development; the Playwright smoke test exists for the main workflow.
 - The documentation commands were followed in a fresh clone (see the task report for exactly which steps).
-- Not claimed: no live deployment was performed or verified, no 14-day uptime check, and no independent manual security audit. Items a reviewer should re-check by hand: role restrictions (employee cannot see other tasks, approve, or open `/users`), cookie flags in a browser, the refresh-token rotation code and the migration.
+- Deployment: the owner created the Vercel, Render and Aiven services and set their environment variables; the AI diagnosed deploy failures from the logs the owner pasted and ran HTTP and browser checks against the live URLs (a scripted API suite and the Playwright workflow test). Those checks found two real problems that were then fixed: rate limiting that never fired behind the proxies, and a login that could be cancelled if submitted during the first-visit session check.
+- Not claimed: no 14-day uptime check, and no independent manual security audit. Items a reviewer should re-check by hand: role restrictions (employee cannot see other tasks, approve, or open `/users`), cookie flags in a browser, the refresh-token rotation code and the migration.
 
 ## Known gaps
 

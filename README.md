@@ -4,11 +4,15 @@ A small full-stack app where an **Admin** creates and assigns tasks, **Employees
 
 | | |
 |---|---|
-| **Live app** | _not deployed yet: the URL will be added here once the app is hosted_ |
+| **Live app (frontend, Vercel)** | https://task-approval-app-gilt.vercel.app |
+| **Live API (backend, Render)** | https://task-approval-app.onrender.com (health check: https://task-approval-app.onrender.com/api/health) |
+| **Database** | hosted MySQL on Aiven (TLS), shared by the live API |
 | **API docs (Swagger)** | locally: http://localhost:4000/api/docs (off in production unless `ENABLE_SWAGGER=true`) |
-| **Source** | https://github.com/mohit77u/task-approval-app |
+| **Source (public)** | https://github.com/mohit77u/task-approval-app |
 
-> **Cold start (free tier hosting).** The intended deployment (Vercel + Render free + hosted MySQL) puts the API to sleep when idle. The first request after a quiet period can take up to about a minute; the UI shows a "waking up the server" banner, retries GETs by itself and then continues. This does not affect a local run.
+To try the live app, open the frontend URL and sign in with one of the [demo accounts](#demo-accounts).
+
+> **Cold start (free tier hosting).** The live API runs on Render's free plan, which puts it to sleep when idle. The first request after a quiet period can take up to about a minute; the UI shows a "waking up the server" banner, retries GETs by itself and then continues. If you see "Cannot verify your session", wait a moment and press **Retry**. This does not affect a local run.
 
 ## Demo accounts
 
@@ -61,7 +65,7 @@ Browser --HTTPS--> Next.js (App Router)
                    NestJS REST API  --TLS/TCP-->  MySQL 8
 ```
 
-Intended hosting: Vercel (frontend), Render (backend), a hosted MySQL such as Aiven. See [Known limitations](#known-limitations): this repository has not been deployed by this documentation's author.
+Hosting: Vercel (frontend), Render (backend), Aiven (MySQL). See [Deployment](#deployment) for how it is set up and [Verify the live deployment](#verify-the-live-deployment) for how to check it.
 
 - **Why a proxy:** a frontend and backend on different hosts (for example `*.vercel.app` and `*.onrender.com`) are different *sites*, so calling the API directly would make the auth cookies third-party and Safari / incognito would drop them. With the Next.js `rewrites` proxy the browser only talks to one origin and cookies stay first-party. The backend still enforces an exact CORS allow-list and an `Origin` check on state-changing requests.
 - **API shape:** URI-versioned REST. Business routes are `/api/v1/...`; `/api/health` is version-neutral (for uptime monitors); Swagger UI is at `/api/docs` outside production (in production only with `ENABLE_SWAGGER=true`). The frontend calls `/api/v1/...` and the rewrite forwards `/api/:path*` to `BACKEND_URL`.
@@ -127,6 +131,44 @@ If you use your own MySQL instead of the container, create an empty database fir
 | Seed roles, demo users and sample tasks (idempotent) | `npm run seed` |
 | Production equivalents (after `npm run build`) | `npm run migration:run:prod`, `npm run seed:prod` |
 
+## Deployment
+
+One GitHub repository (a monorepo) feeds two independent deployments. Each host builds only its own folder, so a commit that touches only `frontend/` redeploys only Vercel, and one that touches only `backend/` redeploys only Render (docs-only commits redeploy neither).
+
+| | Frontend | Backend |
+|---|---|---|
+| Host | Vercel (Hobby) | Render (free web service) |
+| Root directory | `frontend` | `backend` |
+| Build command | default (`next build`) | `npm ci --include=dev && npm run build` |
+| Start command | default | `npm run migration:run:prod && node dist/main` |
+| Health check | n/a | `/api/health` |
+| Auto-deploy filter | Vercel skips builds with no changes under `frontend/` | Render Build Filters, included path: `backend/**` |
+| Env vars (names) | `BACKEND_URL` = the Render URL, no trailing slash and no `/api` (set it **before** the build; changing it needs a redeploy) | `NODE_ENV=production`, `NODE_VERSION`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSL=true`, `DB_SSL_CA`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS`, `COOKIE_SECURE=true`, `COOKIE_SAMESITE=lax`, `FRONTEND_ORIGINS` = the exact Vercel URL (`https://...`, no trailing slash), `TRUST_PROXY_HOPS` (at least 1), `THROTTLING_ENABLED=true` |
+
+Notes:
+
+- `DB_SSL_CA` is the database provider's CA certificate on one line, with `\n` between the lines.
+- The start command applies pending **migrations** on every boot but does **not** seed. For a brand-new empty database run the seed once (`npm run seed` from a machine with the database credentials in the environment, or `npm run seed:prod` in a Render shell). Re-running the seed is safe.
+- `JWT_ACCESS_SECRET` must be a freshly generated random string, for example `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`. The app refuses to boot in production with a placeholder or hand-typed secret (see [Environment variables](#environment-variables-names-only)).
+- The browser only talks to the Vercel origin; Next.js `rewrites` proxy `/api/*` to Render, so the auth cookies stay first-party.
+
+## Verify the live deployment
+
+1. **Backend health:** open https://task-approval-app.onrender.com/api/health, expect `{"status":"ok","db":"up"}` (the first request after idle can take about a minute).
+2. **Proxy:** open https://task-approval-app-gilt.vercel.app/api/health, expect the same JSON (this goes browser -> Vercel -> Render -> database).
+3. **Sign in** at https://task-approval-app-gilt.vercel.app/login with a [demo account](#demo-accounts) and follow the [suggested walkthrough](#suggested-walkthrough) (use an incognito window for the second role).
+4. **Automated browser check** of the whole workflow against the live site:
+   ```bash
+   cd frontend && npm ci && npx playwright install chromium
+   E2E_BASE_URL=https://task-approval-app-gilt.vercel.app npm run e2e
+   ```
+   The test creates its own task and deletes it afterwards.
+5. **Cookies (browser DevTools -> Application -> Cookies):** `access_token` (path `/api`) and `refresh_token` (path `/api/v1/auth`) are `HttpOnly`, `Secure`, `SameSite=Lax`, host-only on the Vercel domain.
+6. **Security spot checks:** `curl -s -o /dev/null -w "%{http_code}\n" -X POST https://task-approval-app.onrender.com/api/v1/tasks -H "Origin: https://evil.example" -H "Content-Type: application/json" -d '{}'` prints `403` (cross-origin write refused); `.../api/v1/tasks` without signing in answers `401`; `/api/docs` is not public in production.
+7. **Rate limiting:** more than 5 login attempts for one email within a minute return `429` with a `Retry-After` header.
+
+Typical problems: `Cannot verify your session` means the browser cannot reach the API (Render still waking up, a failed Render deploy, or a wrong `BACKEND_URL` on Vercel); login failing with `403` means `FRONTEND_ORIGINS` on Render is not the exact Vercel URL; the Render start failing with `Invalid environment configuration` lists the offending variable in its log.
+
 ## Tests
 
 ```bash
@@ -146,12 +188,13 @@ Static checks: `cd backend && npm run build` and `npm run lint` (note: `lint` ru
 
 ## Security notes
 
-bcrypt password hashing; parameterized queries only (TypeORM); input validation with a whitelist (unknown fields are rejected); `httpOnly` + `Secure` (when enabled) + `SameSite` cookies; refresh-token rotation with reuse detection; helmet; strict CORS allow-list plus an `Origin` check on state-changing requests; rate limiting (100 requests/min globally, login limited to 5/min); no secrets in the repository.
+bcrypt password hashing; parameterized queries only (TypeORM); input validation with a whitelist (unknown fields are rejected); `httpOnly` + `Secure` (when enabled) + `SameSite` cookies; refresh-token rotation with reuse detection; helmet; strict CORS allow-list plus an `Origin` check on state-changing requests; rate limiting (100 requests/min globally; login limited to 5/min per email, refresh to 30/min per session, because the client IP is not reliable behind Vercel and Cloudflare); no secrets in the repository.
 
 ## Known limitations
 
 - **No backend HTTP / end-to-end tests.** The backend has unit tests only. An earlier API e2e suite was deliberately removed, so authorization, the approval flow, token rotation and throttling are covered by unit tests of their parts plus the Playwright smoke test, not by HTTP-level backend tests.
-- **Not deployed by this repo's docs.** The Vercel / Render / hosted MySQL setup is the intended target; no live URL is claimed here. Free-tier cold starts (up to about a minute) apply when hosted that way; an uptime monitor pinging `/api/health` can reduce them.
+- **Free-tier hosting:** the live API sleeps when idle, so the first request can take up to about a minute (an uptime monitor pinging `/api/health` every 5 minutes keeps it awake). The free database has no SLA.
+- **Login rate limit is per email:** five login attempts a minute per email (counted whether they succeed or not) so anyone who knows an address can briefly block that account's logins.
 - **One session per browser profile:** cookies are shared across tabs, so two roles at once need an incognito window or another browser.
 - **Same-second password change:** a JWT's issue time has one-second resolution, so an access token issued in the same second as a password change is also refused; signing in again a moment later works.
 - **Soft-deleted users keep their email reserved:** that email cannot be reused for a new user.
