@@ -101,25 +101,28 @@ Task creation writes the first history row with `from_status = NULL`. Deleting i
 
 ```
 backend/src/
-  main.ts                   global prefix /api, helmet, cookie-parser, CORS, ValidationPipe, Swagger, trust proxy
-  app.module.ts
+  main.ts, app.setup.ts     global prefix /api, URI versioning (/api/v1), request id, helmet, cookie-parser, CORS,
+                            body parsers, ValidationPipe, exception filter, trust proxy; Swagger (see 5.8)
+  app.module.ts             Nest middleware: Origin check, then JWT auth on every route except an exclusion list
+                            (POST auth/login, auth/refresh, auth/logout; GET/HEAD health)
   config/                   typed config + env validation (fail fast on missing vars)
   database/
-    data-source.ts          shared by app and TypeORM CLI
+    data-source.ts          shared by the TypeORM CLI and the seed
     migrations/
     seeds/seed.ts           idempotent
+  security/                 token, password and cookie helpers; global guards registered here
   common/
-    decorators/             @CurrentUser, @Roles, @Public
-    guards/                 JwtAuthGuard (global), RolesGuard
-    filters/                AllExceptionsFilter
-    interceptors/           request-id + logging
-    dto/                    PaginationQueryDto, Paginated<T>
-    enums/
-  modules/
-    auth/  users/  tasks/  comments/  dashboard/  health/
+    decorators/             @CurrentUser, @Roles
+    guards/                 RolesGuard, AppThrottlerGuard (both global)
+    middleware/             request id (Express), Origin check, JWT auth (Nest middleware)
+    errors/                 AppException, error codes, AllExceptionsFilter, body-parser error mapping
+    pipes/  dto/  enums/
+  modules/<name>/           auth  users  tasks  comments  dashboard  health
+    controllers/ services/ dto/ entities/ (mappers/, state-machine/ where needed)
 ```
 
 Each module: thin controller, service holding business logic, DTOs, entity. Controllers never touch repositories.
+There is no logging interceptor: errors are logged by the exception filter with the request id.
 
 ### 5.2 Error contract
 
@@ -128,14 +131,16 @@ Every error, from every endpoint:
 ```json
 { "statusCode": 422, "code": "VALIDATION_ERROR", "message": "Validation failed",
   "details": [{ "field": "title", "message": "title must not be empty" }],
-  "requestId": "…", "timestamp": "…", "path": "/api/tasks" }
+  "requestId": "…", "timestamp": "…", "path": "/api/v1/tasks" }
 ```
 
 Codes: `UNAUTHENTICATED`, `TOKEN_EXPIRED` (access token expired; client should refresh), `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `INVALID_TRANSITION`,
-`STATE_CONFLICT`, `CONFLICT` (duplicate resource, e.g. an email already in use), `RATE_LIMITED`, `INTERNAL_ERROR`. Unknown errors are logged with the request id and
-returned as `INTERNAL_ERROR` without leaking internals.
+`STATE_CONFLICT`, `CONFLICT` (duplicate resource, e.g. an email already in use), `RATE_LIMITED`, `INTERNAL_ERROR`, `SERVICE_UNAVAILABLE` (503, e.g. the health check cannot reach the database). Unknown errors are logged with the request id and
+returned as `INTERNAL_ERROR` without leaking internals. Malformed or oversized request bodies and unknown paths use the same shape (400/413/415 `VALIDATION_ERROR`, 404 `NOT_FOUND`), including `requestId`.
 
 ### 5.3 Endpoints
+
+Paths below are relative to `/api/v1` (URI versioning), except `/health`, which is version-neutral at `/api/health`.
 
 | Endpoint | Access | Notes |
 |---|---|---|
@@ -175,7 +180,7 @@ an Employee can never approve or reject.
 Service flow, inside one transaction:
 1. Load task with scoping (404 if the actor may not see it).
 2. Check `canTransition`.
-3. `UPDATE tasks SET status = :to WHERE id = :id AND status = :from` and require `affected === 1`; otherwise `STATE_CONFLICT` (409). This makes concurrent or double submissions safe.
+3. `UPDATE tasks SET status = :to WHERE id = :id AND status = :from AND assignee_id = :assigneeId` and require `affected === 1`; otherwise `STATE_CONFLICT` (409). This makes concurrent or double submissions, and a reassignment between the read and the write, safe.
 4. Insert the `task_status_history` row.
 
 ### 5.5 Dashboard
@@ -185,8 +190,8 @@ Missing statuses are filled with `0`.
 
 ### 5.6 Seed
 
-Idempotent (upsert by `roles.code` and by email). Creates the `ADMIN` and `EMPLOYEE` roles, then 2 Admins, 3 Employees (all flagged `is_default`, so they cannot be deleted), and a handful of tasks across all statuses
-and priorities for a useful first view. Demo passwords are documented demo values, overridable via env.
+Idempotent and non-destructive (insert-if-missing by `roles.code` and by email; existing rows are never updated). Creates the `ADMIN` and `EMPLOYEE` roles, then 2 Admins, 3 Employees (all flagged `is_default`, so they cannot be deleted), and a handful of tasks across all statuses
+and priorities for a useful first view. Demo passwords are documented demo values, overridable via `SEED_ADMIN_PASSWORD` / `SEED_EMPLOYEE_PASSWORD`.
 
 ### 5.7 Authentication: access and refresh tokens
 
@@ -195,7 +200,7 @@ and priorities for a useful first view. Demo passwords are documented demo value
 | Format | Signed JWT (`sub`, role code, `exp`) | Opaque random 256-bit value, never a JWT |
 | Lifetime | **30 minutes** | **1 year** (each rotated token is valid 1 year from its own issue) |
 | Storage | httpOnly Secure SameSite cookie, sent on every API call | httpOnly Secure SameSite cookie, `Path` limited to the auth routes so it is not sent with other calls. In the DB only its SHA-256 hash is stored (the value is high-entropy, so a fast hash is correct here; bcrypt is for passwords) |
-| Verified by | JWT signature, no DB lookup | DB lookup by hash |
+| Verified by | JWT signature, then a primary-key lookup of the user: deleted user, or token issued (`iat`) at or before `users.password_changed_at` → 401; the role is taken from the DB row | DB lookup by hash |
 
 Flow:
 1. **Login** creates a new token *family* and sets both cookies.
@@ -225,7 +230,7 @@ CORS is still configured strictly (below) for local split-port development, Swag
 | HttpOnly | true | true |
 | Secure | false (`COOKIE_SECURE=false`) | true |
 | SameSite | Lax | Lax |
-| Path | access: `/api`; refresh: `/api/auth` | same |
+| Path | access: `/api`; refresh: `/api/v1/auth` | same |
 | Domain | unset (host-only) | unset |
 | Max-Age | both 1 year. The access JWT itself expires after 30 min; its cookie outlives it so the API can answer `TOKEN_EXPIRED` instead of the browser silently dropping the cookie | same |
 
@@ -235,7 +240,8 @@ direct cross-origin calls work, but this mode is documented as unsupported for S
 **CORS and request-origin policy:**
 - `FRONTEND_ORIGINS` is an exact-match allowlist (comma separated). No wildcard, no regex. `credentials: true`, explicit methods and headers, `maxAge` 600 s. Vercel preview URLs are not allowed unless added on purpose.
 - A guard rejects state-changing requests (`POST/PATCH/PUT/DELETE`) whose `Origin` header is present but not in the allowlist (`403 FORBIDDEN`). This is a cheap CSRF defense on top of `SameSite=Lax`. Requests without `Origin` (curl, server-to-server) are allowed because they carry no browser cookies.
-- The app refuses to boot in production if `COOKIE_SECURE` is not `true` or `FRONTEND_ORIGINS` contains an `http://` or wildcard entry.
+- The app refuses to boot in production if `COOKIE_SECURE` is not `true`, `FRONTEND_ORIGINS` contains an `http://` or wildcard entry, `JWT_ACCESS_SECRET` is the example placeholder or obviously weak, `TRUST_PROXY_HOPS` is below 1, or `DB_SSL=true` without `DB_SSL_CA`. `ACCESS_TOKEN_TTL` must match `<n>s|m|h|d` in every environment.
+- Swagger (`/api/docs`) is mounted outside production, and in production only when `ENABLE_SWAGGER=true`.
 
 **Proxy awareness:** `trust proxy` is set from `TRUST_PROXY_HOPS` so Express sees the original protocol and client IP. Because requests reach Render through Vercel, the socket IP is Vercel's, so IP-only throttling would be shared across all users. The login throttle is keyed by **normalized email + IP**, and authenticated routes by **user id**; plain IP is only the fallback.
 
@@ -243,7 +249,7 @@ direct cross-origin calls work, but this mode is documented as unsupported for S
 
 | Where | Variables |
 |---|---|
-| Backend | `NODE_ENV`, `PORT`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSL`, `DB_SSL_CA`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `FRONTEND_ORIGINS`, `TRUST_PROXY_HOPS`, `THROTTLING_ENABLED` (default `true`; the e2e suite turns it off except in the throttling spec) |
+| Backend | `NODE_ENV`, `PORT`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSL`, `DB_SSL_CA`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `FRONTEND_ORIGINS`, `TRUST_PROXY_HOPS`, `THROTTLING_ENABLED` (default `true`), `ENABLE_SWAGGER` (optional), `SEED_ADMIN_PASSWORD`, `SEED_EMPLOYEE_PASSWORD` (optional, seed only) |
 | Frontend | `BACKEND_URL` (server-only, read by `rewrites`). There is no `NEXT_PUBLIC_` API URL; the browser uses the relative path `/api` |
 
 | | Local | Deployed |
@@ -341,7 +347,7 @@ shadcn/ui + Tailwind, light theme with dark-mode support, indigo accent.
 
 ## 7. Security summary
 
-bcrypt hashing; short-lived access JWT plus rotating, hashed, revocable refresh token with reuse detection, both in httpOnly Secure SameSite cookies; global auth guard with explicit `@Public()` opt-out;
+bcrypt hashing; short-lived access JWT (re-checked against the user row on every request) plus rotating, hashed, revocable refresh token with reuse detection, both in httpOnly Secure SameSite cookies; authentication middleware on every route except an explicit exclusion list;
 role and ownership checks in services; 404 for unauthorized task access; DTO whitelist and forbid unknown
 fields; ORM-bound parameters only; helmet; strict env validation; rate limiting; no secrets in the repo;
 strict CORS allowlist plus an `Origin` check on state-changing requests, with the browser reaching the API same-origin through the Next proxy (section 5.8).
@@ -385,7 +391,7 @@ production DB; run the full reviewer flow on the live URL.
 task-approval-app/
   README.md                 overview, architecture, demo accounts, deploy steps, limitations
   docs/AI-USAGE.md          AI tools used and what was personally verified
-  docker-compose.yml        local MySQL (dev + test)
+  docker-compose.yml        optional local MySQL
   frontend/                 README.md, .env.example
   backend/                  README.md, .env.example
 ```
@@ -410,3 +416,14 @@ multi-tenant support, i18n.
 - Verify that Vercel's external `rewrites` pass `Set-Cookie` through unchanged and tolerate a Render cold start (up to about a minute) without a gateway timeout. If the first request after idle times out, the client retry in 6.2 and the keep-alive ping cover it; confirm on the real deployment.
 - Verify the Aiven IP allow-list accepts Render's outbound traffic.
 - Final demo credentials are chosen at seed time and listed in the README.
+
+## Revision notes
+
+Post-implementation decisions (2026-10-12), reflected in the sections above:
+
+- **Layout:** feature modules under `src/modules/<name>/{controllers,services,dto,entities}`; shared code in `src/security` and `src/common`; entities loaded by glob.
+- **Auth as middleware:** the Origin check and JWT authentication are Nest middleware with an exclusion list in `AppModule`, replacing the planned global `JwtAuthGuard` and `@Public()`. The request id is assigned by Express middleware mounted first, so body-parser errors and unknown paths also carry it. No logging interceptor.
+- **Versioning:** URI versioning; business routes under `/api/v1`, `/api/health` version-neutral, refresh cookie `Path=/api/v1/auth`.
+- **Tests:** the backend e2e suite (supertest + MySQL test DB, sections 3 and 8) was removed by the owner; the backend has unit tests only, and the `mysql_test` compose service and `.env.test*` files are gone.
+- **Token revocation:** access tokens are no longer trusted on signature alone (5.7): deletion, a password change (`users.password_changed_at`) or a role change take effect on the next request.
+- **Hardening:** task transitions also compare-and-set the assignee; user deletion checks for live tasks and soft-deletes in one transaction under a row lock; production boot checks and opt-in Swagger in production (5.8); new error code `SERVICE_UNAVAILABLE` (5.2).
