@@ -31,7 +31,7 @@ describe('baseQuery', () => {
       'fetch',
       vi.fn(async (request: Request) => {
         const path = pathOf(request);
-        if (path === '/api/auth/refresh') {
+        if (path === '/api/v1/auth/refresh') {
           calls.refresh += 1;
           await new Promise((resolve) => setTimeout(resolve, 20)); // keep it in flight while the others arrive
           refreshed = true;
@@ -73,7 +73,7 @@ describe('baseQuery', () => {
     const user = { id: 1, name: 'A', email: 'a@x.dev', role: { id: 1, code: 'ADMIN', name: 'Admin' } };
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (request: Request) => (pathOf(request) === '/api/auth/login' ? json(200, { user }) : json(401, errorBody('TOKEN_EXPIRED')))),
+      vi.fn(async (request: Request) => (pathOf(request) === '/api/v1/auth/login' ? json(200, { user }) : json(401, errorBody('TOKEN_EXPIRED')))),
     );
 
     const store = makeStore();
@@ -130,7 +130,7 @@ describe('baseQuery', () => {
     const user = { id: 1, name: 'A', email: 'a@x.dev', role: { id: 1, code: 'ADMIN', name: 'Admin' } };
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (request: Request) => (pathOf(request) === '/api/auth/login' ? json(200, { user }) : json(200, emptyPage))),
+      vi.fn(async (request: Request) => (pathOf(request) === '/api/v1/auth/login' ? json(200, { user }) : json(200, emptyPage))),
     );
 
     const store = makeStore();
@@ -148,7 +148,7 @@ describe('baseQuery', () => {
   });
 
   it('empties the api cache after the session ends', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (request: Request) => (pathOf(request) === '/api/tasks' ? json(200, emptyPage) : json(401, errorBody('UNAUTHENTICATED')))));
+    vi.stubGlobal('fetch', vi.fn(async (request: Request) => (pathOf(request) === '/api/v1/tasks' ? json(200, emptyPage) : json(401, errorBody('UNAUTHENTICATED')))));
     const store = makeStore();
     await store.dispatch(tasksApi.endpoints.listTasks.initiate({ page: 1, limit: 20 }));
     expect(Object.keys(store.getState().api.queries)).toHaveLength(1);
@@ -168,8 +168,8 @@ describe('baseQuery', () => {
       'fetch',
       vi.fn(async (request: Request) => {
         const path = pathOf(request);
-        if (path === '/api/auth/login') return json(200, { user });
-        if (path === '/api/auth/refresh') return refreshResponse();
+        if (path === '/api/v1/auth/login') return json(200, { user });
+        if (path === '/api/v1/auth/refresh') return refreshResponse();
         return json(401, errorBody('TOKEN_EXPIRED'));
       }),
     );

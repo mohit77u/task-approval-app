@@ -5,7 +5,7 @@ import { sessionEnded } from '@/store/actions';
 import { setServerWaking } from '@/store/slices/uiSlice';
 import { ApiError } from '@/types/api';
 
-const rawBaseQuery = fetchBaseQuery({ baseUrl: '/api', credentials: 'include' });
+const rawBaseQuery = fetchBaseQuery({ baseUrl: '/api/v1', credentials: 'include' });
 
 type RawResult = Awaited<ReturnType<typeof rawBaseQuery>>;
 

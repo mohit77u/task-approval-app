@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 
-// Node's Request rejects relative URLs, but RTK Query builds Requests for '/api/...'. Resolve them against a fake origin
+// Node's Request rejects relative URLs, but RTK Query builds Requests for '/api/v1/...'. Resolve them against a fake origin
 // so tests can exercise the real fetchBaseQuery.
 const NativeRequest = globalThis.Request;
 globalThis.Request = class extends NativeRequest {
