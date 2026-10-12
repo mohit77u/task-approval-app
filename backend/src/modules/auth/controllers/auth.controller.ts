@@ -78,18 +78,19 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ refreshed: true }> {
+    const refreshCookie = readCookie(req, REFRESH_COOKIE);
     try {
-      const result = await this.auth.refresh(
-        readCookie(req, REFRESH_COOKIE),
-        clientMeta(req),
-      );
+      const result = await this.auth.refresh(refreshCookie, clientMeta(req));
       res.cookie(ACCESS_COOKIE, result.accessToken, this.cookies.access);
       if (result.refreshToken)
         res.cookie(REFRESH_COOKIE, result.refreshToken, this.cookies.refresh);
       return { refreshed: true };
     } catch (error) {
-      // A dead session must not leave a dead cookie behind, or the client would retry it forever.
-      if (error instanceof AppException) this.clearSessionCookies(res);
+      // A dead session must not leave a dead cookie behind, or the client would retry it forever. Only clear when a
+      // refresh cookie was actually sent: a cookie-less refresh (e.g. a first-visit bootstrap) can resolve after the
+      // user logged in, and its Set-Cookie clears would wipe the fresh session.
+      if (refreshCookie && error instanceof AppException)
+        this.clearSessionCookies(res);
       throw error;
     }
   }
