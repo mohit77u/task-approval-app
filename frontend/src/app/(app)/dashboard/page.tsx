@@ -15,7 +15,8 @@ export default function DashboardPage(): React.JSX.Element {
   const dashboard = useGetDashboardQuery();
   // Admins act on submitted work; employees act on tasks they have not started yet.
   const attentionStatus = isAdmin ? 'PENDING_APPROVAL' : 'PENDING';
-  const attention = useListTasksQuery({ status: attentionStatus, page: 1, limit: 5 });
+  // Skipped until the user (and so the role) is known, otherwise the employee default would fire for an admin.
+  const attention = useListTasksQuery({ status: attentionStatus, page: 1, limit: 5 }, { skip: !user });
 
   return (
     <div>
