@@ -33,6 +33,7 @@ export function AuthGate({ children }: { children: ReactNode }): React.JSX.Eleme
           title="Cannot verify your session"
           message="We could not reach the server to check your session. Check your connection and try again."
           onRetry={() => void me.refetch()}
+          retrying={me.isFetching}
         />
       </div>
     );

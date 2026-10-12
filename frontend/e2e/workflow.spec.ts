@@ -1,4 +1,4 @@
-import { expect, Page, test } from '@playwright/test';
+import { BrowserContext, expect, Page, test } from '@playwright/test';
 
 const ADMIN = { email: 'admin@taskapp.dev', password: 'Admin@12345' };
 const EMPLOYEE = { email: 'priya@taskapp.dev', password: 'Employee@12345' };
@@ -26,22 +26,28 @@ async function expectStatus(page: Page, label: string): Promise<void> {
 
 // Remember the task this run created so it is removed even when an assertion fails midway; the shared dev DB stays clean.
 let createdTaskId: string | undefined;
+// The test's browser contexts, closed in afterAll even when a step fails so no session or page leaks.
+const openContexts: BrowserContext[] = [];
 
 test.afterAll(async ({ browser }) => {
+  await Promise.all(openContexts.map((context) => context.close().catch(() => undefined)));
   if (!createdTaskId) return;
   const context = await browser.newContext();
-  const page = await context.newPage();
-  await signIn(page, ADMIN);
-  const response = await page.request.delete(`/api/v1/tasks/${createdTaskId}`);
-  expect(response.ok()).toBeTruthy();
-  await context.close();
+  try {
+    const page = await context.newPage();
+    await signIn(page, ADMIN);
+    const response = await page.request.delete(`/api/v1/tasks/${createdTaskId}`);
+    expect(response.ok()).toBeTruthy();
+  } finally {
+    await context.close();
+  }
 });
 
 test('a task moves through the full approval workflow with the right people in control', async ({ browser }) => {
   // Two isolated browser contexts = two separate sessions, as a reviewer would use.
-  const adminPage = await (await browser.newContext()).newPage();
-  const employeePage = await (await browser.newContext()).newPage();
-  const otherPage = await (await browser.newContext()).newPage();
+  const contexts = [await browser.newContext(), await browser.newContext(), await browser.newContext()];
+  openContexts.push(...contexts);
+  const [adminPage, employeePage, otherPage] = await Promise.all(contexts.map((context) => context.newPage()));
   const title = `E2E task ${Date.now()}`;
 
   await test.step('admin creates and assigns a task', async () => {
@@ -56,13 +62,14 @@ test('a task moves through the full approval workflow with the right people in c
     await adminPage.getByRole('button', { name: 'Create task' }).click();
     await expect(adminPage.getByText('Task created')).toBeVisible();
     await adminPage.getByRole('link', { name: title }).click();
+    await adminPage.waitForURL(/\/tasks\/\d+$/);
+    createdTaskId = adminPage.url().split('/').pop(); // recorded now so cleanup works even if a later step fails
     await expectStatus(adminPage, 'Pending');
     await expect(adminPage.getByLabel('Status', { exact: true })).toBeDisabled(); // only the assignee can start it
   });
 
   const taskUrl = adminPage.url();
-  const taskId = taskUrl.split('/').pop();
-  createdTaskId = taskId;
+  const taskId = createdTaskId;
 
   await test.step('employee starts the task, cancelling once first', async () => {
     await signIn(employeePage, EMPLOYEE);

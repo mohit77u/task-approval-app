@@ -7,8 +7,10 @@ import { useDebouncedValue } from './useDebouncedValue';
 type FilterKey = 'status' | 'priority' | 'assigneeId';
 
 /**
- * Task-list filters, stored in the URL so refresh, back/forward and shared links all work. Search typing is debounced
- * before it reaches the URL (and therefore before it triggers a request).
+ * Task-list filters, stored in the URL so refresh and shared links keep them. Changes use router.replace, so they do
+ * not add history entries (back leaves the list rather than stepping through filters); the hook still follows an
+ * external URL change into the search box. Search typing is debounced before it reaches the URL (and therefore before
+ * it triggers a request).
  */
 export function useTaskFilters(): {
   filters: TaskFilters & { page: number };

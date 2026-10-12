@@ -15,7 +15,9 @@ import { useConfirm } from '@/hooks/useConfirm';
 import { useDeleteUserMutation, useListUsersQuery } from '@/services/api/usersApi';
 import { User } from '@/types/api';
 
-const PAGE_SIZE = 10;
+
+// Separate from the task list's PAGE_SIZE (lib/taskFilters): the two pages may be tuned independently.
+const USERS_PAGE_SIZE = 10;
 
 export default function UsersPage(): React.JSX.Element {
   const { user: me, isAdmin } = useAuth();
@@ -26,7 +28,7 @@ export default function UsersPage(): React.JSX.Element {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<User | undefined>();
   // Skipped for non-admins: the backend would answer 403 anyway, and there is no reason to provoke an error toast.
-  const users = useListUsersQuery({ page, limit: PAGE_SIZE }, { skip: !isAdmin });
+  const users = useListUsersQuery({ page, limit: USERS_PAGE_SIZE }, { skip: !isAdmin });
 
   if (!isAdmin || !me) {
     return <ErrorState title="Admins only" message="You do not have access to this page." />;
