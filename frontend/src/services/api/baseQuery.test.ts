@@ -87,6 +87,71 @@ describe('baseQuery', () => {
     expect(notify.info).toHaveBeenCalledWith('Your session has expired. Please sign in again.', expect.anything());
   });
 
+  it('does not log the user out when a first-visit refresh fails after they signed in', async () => {
+    const { notify } = await import('@/lib/notify');
+    const user = { id: 1, name: 'A', email: 'a@x.dev', role: { id: 1, code: 'ADMIN', name: 'Admin' } };
+    let answerRefresh: () => void = () => undefined;
+    const refreshGate = new Promise<void>((resolve) => {
+      answerRefresh = resolve;
+    });
+    let refreshStarted: () => void = () => undefined;
+    const refreshStartedSignal = new Promise<void>((resolve) => {
+      refreshStarted = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (request: Request) => {
+        const path = pathOf(request);
+        if (path === '/api/v1/auth/login') return json(200, { user });
+        if (path === '/api/v1/auth/refresh') {
+          refreshStarted();
+          await refreshGate; // the answer arrives only after the login below has completed
+          return json(401, errorBody('UNAUTHENTICATED'));
+        }
+        return json(401, errorBody('UNAUTHENTICATED'));
+      }),
+    );
+
+    const store = makeStore();
+    const me = store.dispatch(authApi.endpoints.me.initiate());
+    await refreshStartedSignal;
+    await store.dispatch(authApi.endpoints.login.initiate({ email: 'a@x.dev', password: 'pw' }));
+    expect(store.getState().auth.status).toBe('authenticated');
+
+    answerRefresh();
+    await me;
+    await new Promise((resolve) => setTimeout(resolve, 0)); // let any deferred cache wipe run
+
+    expect(store.getState().auth.status).toBe('authenticated');
+    expect(notify.info).not.toHaveBeenCalled();
+  });
+
+  it('does not refetch a deleted task, so the detail page never shows a false "not found"', async () => {
+    const paths: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (request: Request) => {
+        paths.push(`${request.method} ${pathOf(request)}`);
+        if (request.method === 'DELETE') return json(204, null);
+        return pathOf(request) === '/api/v1/tasks/7' ? json(404, errorBody('NOT_FOUND', 404)) : json(200, emptyPage);
+      }),
+    );
+    const store = makeStore();
+    // The detail page's subscription stays open while the delete runs.
+    const task = { id: 7, title: 'T' };
+    store.dispatch(tasksApi.util.upsertQueryData('getTask', 7, task as never));
+    const sub = store.dispatch(tasksApi.endpoints.getTask.initiate(7));
+    await sub;
+    paths.length = 0;
+
+    await store.dispatch(tasksApi.endpoints.deleteTask.initiate(7));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(paths).toContain('DELETE /api/v1/tasks/7');
+    expect(paths).not.toContain('GET /api/v1/tasks/7');
+    sub.unsubscribe();
+  });
+
   it('never tries to refresh when the login itself is rejected', async () => {
     const fetchMock = vi.fn(async () => json(401, errorBody('UNAUTHENTICATED')));
     vi.stubGlobal('fetch', fetchMock);

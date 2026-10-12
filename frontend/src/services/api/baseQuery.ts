@@ -99,14 +99,19 @@ const isSessionRejected = (error: FetchBaseQueryError | undefined): boolean =>
   error?.status === 401 || error?.status === 403;
 
 interface AuthAwareState {
-  auth?: { status?: string };
+  auth?: { status?: string; user?: unknown };
 }
+
+const authOf = (api: BaseQueryApi): NonNullable<AuthAwareState['auth']> => (api.getState() as AuthAwareState).auth ?? {};
 
 export const baseQuery: BaseQueryFn<string | FetchArgs, unknown, ApiError, object, FetchBaseQueryMeta> = async (
   args,
   api,
   extraOptions,
 ) => {
+  // Who was signed in when this request left. A login that completes while the request or its refresh is in flight
+  // makes any "session rejected" answer stale: it describes the cookies from before that login.
+  const userAtStart = authOf(api).user;
   let result = await requestWithColdStartRetry(args, api, extraOptions);
 
   if (isAuthFailure(result.error) && !isAuthEndpoint(args)) {
@@ -117,7 +122,13 @@ export const baseQuery: BaseQueryFn<string | FetchArgs, unknown, ApiError, objec
       // Transient refresh failure: keep the session and surface the real problem so the usual error toast applies.
       return { error: normalizeError(refresh.error, refresh.meta?.response?.headers.get('retry-after')), meta: refresh.meta };
     } else {
-      const wasSignedIn = (api.getState() as AuthAwareState).auth?.status === 'authenticated';
+      const auth = authOf(api);
+      const wasSignedIn = auth.status === 'authenticated';
+      if (wasSignedIn && auth.user !== userAtStart) {
+        // A first-visit refresh (no cookie, backend answers 401 and clears cookies) landed after the user logged in.
+        // Ending the session now would log them straight out; the error is still reported as handled (no toast).
+        return { error: { ...normalizeError(result.error), handled: true }, meta: result.meta };
+      }
       api.dispatch(sessionEnded({ notify: wasSignedIn }));
       return { error: { ...normalizeError(result.error), handled: true }, meta: result.meta };
     }

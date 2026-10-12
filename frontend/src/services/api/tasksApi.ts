@@ -46,7 +46,9 @@ export const tasksApi = baseApi.injectEndpoints({
     }),
     deleteTask: build.mutation<void, number>({
       query: (id) => ({ url: `tasks/${id}`, method: 'DELETE' }),
-      invalidatesTags: (_result, _error, id) => [{ type: 'Task', id }, { type: 'Task', id: 'LIST' }, 'Dashboard'],
+      // Deliberately not the deleted task's own tag: the open detail page is subscribed to it and would refetch
+      // GET /tasks/:id (404) before it navigates away, flashing "Task not found" and an error toast after "Task deleted".
+      invalidatesTags: [{ type: 'Task', id: 'LIST' }, 'Dashboard'],
     }),
     // `from` is not sent: it only lets the success toast tell an approval apart from a rejection.
     transitionTask: build.mutation<Task, TransitionArg>({
