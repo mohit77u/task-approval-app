@@ -12,7 +12,13 @@ A small full-stack app where an **Admin** creates and assigns tasks, **Employees
 
 To try the live app, open the frontend URL and sign in with one of the [demo accounts](#demo-accounts).
 
-> **Cold start (free tier hosting).** The live API runs on Render's free plan, which puts it to sleep when idle. The first request after a quiet period can take up to about a minute; the UI shows a "waking up the server" banner, retries GETs by itself and then continues. If you see "Cannot verify your session", wait a moment and press **Retry**. This does not affect a local run.
+> **Heads up: slow first request on the free tier.** The live API runs on Render's **free** plan and the database on a free hosted MySQL (Aiven). Render shows this notice for free services: *"Your free instance will spin down with inactivity, which can delay requests by 50 seconds or more."* So after a quiet period (about 15 minutes with no traffic), or after Render restarts or redeploys the service, the **first request can take 50 seconds to about a minute**. This is normal for free hosting and not a bug. What you will see:
+>
+> - the UI shows a **"waking up the server"** banner, retries by itself and then continues; or the screen says *"Cannot verify your session"*: wait a few seconds and press **Retry**;
+> - a login right after a long idle can feel stuck for up to a minute; just wait, do not click repeatedly;
+> - free database plans can also be paused or restarted by the provider after inactivity; if the API health check keeps failing after a couple of minutes, the database may need to be powered on in the Aiven console.
+>
+> After the first request, everything is fast again. A free uptime monitor pinging `/api/health` every 5 minutes keeps the instance awake. This does not affect a local run.
 
 ## Demo accounts
 
@@ -193,7 +199,7 @@ bcrypt password hashing; parameterized queries only (TypeORM); input validation 
 ## Known limitations
 
 - **No backend HTTP / end-to-end tests.** The backend has unit tests only. An earlier API e2e suite was deliberately removed, so authorization, the approval flow, token rotation and throttling are covered by unit tests of their parts plus the Playwright smoke test, not by HTTP-level backend tests.
-- **Free-tier hosting:** the live API sleeps when idle, so the first request can take up to about a minute (an uptime monitor pinging `/api/health` every 5 minutes keeps it awake). The free database has no SLA.
+- **Free-tier hosting:** Render's free instance spins down with inactivity, which can delay requests by 50 seconds or more after a quiet period, a restart or a redeploy (an uptime monitor pinging `/api/health` every 5 minutes keeps it awake). The free database has no SLA and may be paused or restarted by the provider.
 - **Login rate limit is per email:** five login attempts a minute per email (counted whether they succeed or not) so anyone who knows an address can briefly block that account's logins.
 - **One session per browser profile:** cookies are shared across tabs, so two roles at once need an incognito window or another browser.
 - **Same-second password change:** a JWT's issue time has one-second resolution, so an access token issued in the same second as a password change is also refused; signing in again a moment later works.
