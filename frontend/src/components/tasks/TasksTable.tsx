@@ -12,11 +12,13 @@ import { Task } from '@/types/api';
 interface TasksTableProps {
   tasks: Task[];
   isAdmin: boolean;
+  /** True while a delete request is in flight; blocks starting a second one. */
+  isDeleting?: boolean;
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => void;
 }
 
-export function TasksTable({ tasks, isAdmin, onEdit, onDelete }: TasksTableProps): React.JSX.Element {
+export function TasksTable({ tasks, isAdmin, isDeleting = false, onEdit, onDelete }: TasksTableProps): React.JSX.Element {
   return (
     <div className="overflow-x-auto rounded-md border">
       <Table>
@@ -67,7 +69,7 @@ export function TasksTable({ tasks, isAdmin, onEdit, onDelete }: TasksTableProps
                         <DropdownMenuItem disabled={task.status === 'COMPLETED'} onSelect={() => onEdit(task)}>
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => onDelete(task)}>
+                        <DropdownMenuItem disabled={isDeleting} className="text-destructive focus:text-destructive" onSelect={() => onDelete(task)}>
                           Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>

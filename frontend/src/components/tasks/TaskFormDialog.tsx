@@ -2,6 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
@@ -32,7 +33,7 @@ function FieldError({ message }: { message?: string }): React.JSX.Element | null
   return message ? <p className="text-sm text-destructive">{message}</p> : null;
 }
 
-function TaskForm({ task, onDone }: { task?: Task; onDone: () => void }): React.JSX.Element {
+function TaskForm({ task, onDone, onPendingChange }: { task?: Task; onDone: () => void; onPendingChange: (pending: boolean) => void }): React.JSX.Element {
   const [createTask] = useCreateTaskMutation();
   const [updateTask] = useUpdateTaskMutation();
   const employees = useListUsersQuery({ roleCode: 'EMPLOYEE', limit: 100 });
@@ -49,6 +50,12 @@ function TaskForm({ task, onDone }: { task?: Task; onDone: () => void }): React.
     },
   });
   const { errors } = form.formState;
+
+  // Lift the pending flag so the dialog can refuse to close mid-request.
+  useEffect(() => {
+    onPendingChange(isPending);
+    return () => onPendingChange(false);
+  }, [isPending, onPendingChange]);
 
   const onSubmit = async (values: FormValues): Promise<void> => {
     const input = { ...values, assigneeId: Number(values.assigneeId) };
@@ -141,15 +148,22 @@ interface TaskFormDialogProps {
 }
 
 export function TaskFormDialog({ open, onOpenChange, task }: TaskFormDialogProps): React.JSX.Element {
+  const [pending, setPending] = useState(false);
+  // Esc, overlay click and the X all route through here; closing mid-request would hide the outcome of the save.
+  const handleOpenChange = (next: boolean): void => {
+    if (!next && pending) return;
+    onOpenChange(next);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-w-lg" showCloseButton={!pending}>
         <DialogHeader>
           <DialogTitle>{task ? 'Edit task' : 'New task'}</DialogTitle>
           <DialogDescription>{task ? 'Update the details or reassign the task.' : 'Create a task and assign it to an employee.'}</DialogDescription>
         </DialogHeader>
         {/* Rendered only while open, so the form is rebuilt with fresh defaults every time the dialog opens. */}
-        <TaskForm task={task} onDone={() => onOpenChange(false)} />
+        <TaskForm task={task} onDone={() => onOpenChange(false)} onPendingChange={setPending} />
       </DialogContent>
     </Dialog>
   );

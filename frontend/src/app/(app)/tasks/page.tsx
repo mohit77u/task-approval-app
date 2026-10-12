@@ -25,7 +25,7 @@ function TasksView(): React.JSX.Element {
   const { isAdmin } = useAuth();
   const confirm = useConfirm();
   const { run } = useApiAction();
-  const [deleteTask] = useDeleteTaskMutation();
+  const [deleteTask, { isLoading: isDeleting }] = useDeleteTaskMutation();
   const { filters, searchInput, setSearchInput, setFilter, setPage, reset } = useTaskFilters();
 
   const tasks = useListTasksQuery({ ...filters, limit: PAGE_SIZE });
@@ -35,7 +35,8 @@ function TasksView(): React.JSX.Element {
   const [editing, setEditing] = useState<Task | undefined>();
 
   // After deleting the last task on the final page, move back instead of showing an empty page.
-  const totalPages = tasks.data?.meta.totalPages;
+  // currentData belongs to the current args only (data may be a stale previous page), and we wait out refetches.
+  const totalPages = tasks.isFetching ? undefined : tasks.currentData?.meta.totalPages;
   useEffect(() => {
     if (totalPages !== undefined && filters.page > Math.max(totalPages, 1)) setPage(Math.max(totalPages, 1));
   }, [totalPages, filters.page, setPage]);
@@ -110,7 +111,7 @@ function TasksView(): React.JSX.Element {
       ) : (
         // `data` keeps the previous page while the next one loads, so the table dims instead of flashing empty.
         <div className={cn('transition-opacity', tasks.isFetching && 'opacity-60')}>
-          <TasksTable tasks={tasks.data.items} isAdmin={isAdmin} onEdit={openEdit} onDelete={(task) => void onDelete(task)} />
+          <TasksTable tasks={tasks.data.items} isAdmin={isAdmin} isDeleting={isDeleting} onEdit={openEdit} onDelete={(task) => void onDelete(task)} />
           <Pagination
             page={tasks.data.meta.page}
             totalPages={tasks.data.meta.totalPages}
