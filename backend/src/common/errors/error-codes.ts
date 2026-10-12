@@ -9,4 +9,6 @@ export enum ErrorCode {
   CONFLICT = 'CONFLICT',
   RATE_LIMITED = 'RATE_LIMITED',
   INTERNAL_ERROR = 'INTERNAL_ERROR',
+  /** A dependency (the database) is down; the request may succeed if retried later. */
+  SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE',
 }

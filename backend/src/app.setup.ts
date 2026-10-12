@@ -5,6 +5,8 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { Env } from './config/env.validation';
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
+import { bodyParserErrorMiddleware } from './common/errors/body-parser-error';
+import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 import { createValidationPipe } from './common/pipes/validation.pipe';
 
 /**
@@ -13,9 +15,13 @@ import { createValidationPipe } from './common/pipes/validation.pipe';
  */
 export function configureApp(app: INestApplication): void {
   const config = app.get<ConfigService<Env, true>>(ConfigService);
+  const expressApp = app as NestExpressApplication;
+
+  // First, so every response (including body-parser failures and 404s outside /api) carries a request id.
+  app.use(requestIdMiddleware);
 
   // Requests reach Render through Vercel, so Express must know how many proxy hops to trust for protocol and client IP.
-  (app as NestExpressApplication).set(
+  expressApp.set(
     'trust proxy',
     config.get('TRUST_PROXY_HOPS', { infer: true }),
   );
@@ -32,6 +38,12 @@ export function configureApp(app: INestApplication): void {
     allowedHeaders: ['Content-Type', 'Accept', 'X-Request-Id'],
     maxAge: 600,
   });
+  // Registered here instead of by Nest at init (Nest skips parsers that are already mounted), so the error middleware
+  // below can sit right after them and map their failures to the error contract. After CORS so those errors still
+  // carry CORS headers.
+  expressApp.useBodyParser('json');
+  expressApp.useBodyParser('urlencoded', { extended: true });
+  app.use(bodyParserErrorMiddleware);
   app.useGlobalPipes(createValidationPipe());
   app.useGlobalFilters(new AllExceptionsFilter());
 }

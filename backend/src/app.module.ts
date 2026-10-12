@@ -10,7 +10,6 @@ import { DataSource } from 'typeorm';
 import { forceUtcSession } from './database/utc-session';
 import { JwtAuthMiddleware } from './common/middleware/jwt-auth.middleware';
 import { OriginMiddleware } from './common/middleware/origin.middleware';
-import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { Env, validateEnv } from './config/env.validation';
 import { buildDataSourceOptions } from './database/typeorm.options';
 import { AuthModule } from './modules/auth/auth.module';
@@ -54,7 +53,9 @@ import { SecurityModule } from './security/security.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestIdMiddleware, OriginMiddleware).forRoutes('*');
+    // The request id is assigned earlier, as Express middleware (see configureApp), so it also covers body-parser
+    // errors and unknown paths.
+    consumer.apply(OriginMiddleware).forRoutes('*');
     // Everything is authenticated unless listed here. Refresh and logout must work with an expired access token.
     consumer
       .apply(JwtAuthMiddleware)
