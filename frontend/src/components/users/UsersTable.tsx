@@ -78,7 +78,7 @@ function UsersCardList({ users, currentUserId, isDeleting, onEdit, onDelete }: U
   );
 }
 
-/** Table from the `md` breakpoint up, cards below it. Only one layout is mounted so buttons are never duplicated in the DOM. */
+/** Table from the `lg` breakpoint up, cards below it. Only one layout is mounted so buttons are never duplicated in the DOM. */
 export function UsersTable(props: UsersTableProps): React.JSX.Element {
   const isDesktop = useIsDesktop();
   return isDesktop ? <UsersTableView {...props} /> : <UsersCardList {...props} />;

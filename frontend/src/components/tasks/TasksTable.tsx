@@ -108,7 +108,7 @@ function TasksCardList({ tasks, isAdmin, isDeleting, onEdit, onDelete }: Require
   );
 }
 
-/** Table from the `md` breakpoint up, cards below it. Only one layout is mounted so links and menus are never duplicated in the DOM. */
+/** Table from the `lg` breakpoint up, cards below it. Only one layout is mounted so links and menus are never duplicated in the DOM. */
 export function TasksTable({ isDeleting = false, ...rest }: TasksTableProps): React.JSX.Element {
   const isDesktop = useIsDesktop();
   const props = { ...rest, isDeleting };

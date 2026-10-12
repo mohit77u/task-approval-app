@@ -19,7 +19,10 @@ export function useMediaQuery(query: string, serverDefault: boolean): boolean {
   );
 }
 
-/** True from the Tailwind `md` breakpoint (768px) up; defaults to desktop when it cannot be measured. */
+/**
+ * True from the Tailwind `lg` breakpoint (1024px) up; defaults to desktop when it cannot be measured.
+ * `lg`, not `md`: from 768px the sidebar takes 240px, leaving ~460px, far too little for a five-column table.
+ */
 export function useIsDesktop(): boolean {
-  return useMediaQuery('(min-width: 768px)', true);
+  return useMediaQuery('(min-width: 1024px)', true);
 }
