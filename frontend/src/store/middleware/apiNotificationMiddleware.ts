@@ -37,7 +37,7 @@ export const apiNotificationMiddleware: Middleware = (store) => (next) => (actio
     if (unknownAction.payload.notify) notify.info('Your session has expired. Please sign in again.', { id: 'session-expired' });
     // Deferred a tick: this action is dispatched from inside the failing request, and wiping the cache synchronously
     // would discard that request's own rejection (its caller would see an uninitialized result instead of the error).
-    setTimeout(() => store.dispatch(baseApi.util.resetApiState()), 0);
+    if (unknownAction.payload.wipeCache !== false) setTimeout(() => store.dispatch(baseApi.util.resetApiState()), 0);
     return result;
   }
 

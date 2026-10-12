@@ -5,4 +5,6 @@ import { createAction } from '@reduxjs/toolkit';
  * API layer and the slices can import it without a circular dependency.
  * `notify` is true only if the user was signed in, so a first visit does not greet them with "session expired".
  */
-export const sessionEnded = createAction<{ notify: boolean }>('auth/sessionEnded');
+export const sessionEnded = createAction<{ notify: boolean; wipeCache?: boolean }>('auth/sessionEnded');
+// `wipeCache` (default true) is false for a first visit with no session: there is nothing to wipe, and resetting the API
+// state would abort a login the user submitted while the bootstrap /auth/me + refresh was still in flight.

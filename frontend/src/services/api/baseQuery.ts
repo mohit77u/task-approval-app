@@ -129,7 +129,7 @@ export const baseQuery: BaseQueryFn<string | FetchArgs, unknown, ApiError, objec
         // Ending the session now would log them straight out; the error is still reported as handled (no toast).
         return { error: { ...normalizeError(result.error), handled: true }, meta: result.meta };
       }
-      api.dispatch(sessionEnded({ notify: wasSignedIn }));
+      api.dispatch(sessionEnded({ notify: wasSignedIn, wipeCache: wasSignedIn }));
       return { error: { ...normalizeError(result.error), handled: true }, meta: result.meta };
     }
   }

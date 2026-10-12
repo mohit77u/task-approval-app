@@ -240,6 +240,44 @@ describe('baseQuery', () => {
     expect(Object.keys(store.getState().api.queries)).toHaveLength(0);
   });
 
+  it('does not abort a login submitted while the first-visit bootstrap is still failing', async () => {
+    const user = { id: 1, name: 'A', email: 'a@x.dev', role: { id: 1, code: 'ADMIN', name: 'Admin' } };
+    let releaseRefresh: () => void = () => undefined;
+    let releaseLogin: () => void = () => undefined;
+    const refreshGate = new Promise<void>((resolve) => (releaseRefresh = resolve));
+    const loginGate = new Promise<void>((resolve) => (releaseLogin = resolve));
+    // A fetch that honours AbortSignal like a real one: a reset of the API state aborts in-flight requests.
+    const abortable = (request: Request, gate: Promise<void>, respond: () => Response): Promise<Response> =>
+      new Promise((resolve, reject) => {
+        request.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+        void gate.then(() => resolve(respond()));
+      });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((request: Request) => {
+        const path = pathOf(request);
+        if (path === '/api/v1/auth/me') return Promise.resolve(json(401, errorBody('UNAUTHENTICATED')));
+        if (path === '/api/v1/auth/refresh') return abortable(request, refreshGate, () => json(401, errorBody('UNAUTHENTICATED')));
+        if (path === '/api/v1/auth/login') return abortable(request, loginGate, () => json(200, { user }));
+        return Promise.resolve(json(404, errorBody('NOT_FOUND', 404)));
+      }),
+    );
+
+    const store = makeStore();
+    const me = store.dispatch(authApi.endpoints.me.initiate(undefined));
+    await new Promise((resolve) => setTimeout(resolve, 10)); // me answered 401; the refresh is now pending
+    const login = store.dispatch(authApi.endpoints.login.initiate({ email: 'a@x.dev', password: 'pw' }));
+
+    releaseRefresh(); // the first-visit refresh fails -> session end for a user who never had a session
+    await me;
+    await new Promise((resolve) => setTimeout(resolve, 10)); // let any deferred cache wipe run
+    releaseLogin();
+
+    const outcome = await login;
+    expect('data' in outcome && outcome.data?.user.id).toBe(1);
+    expect(store.getState().auth.status).toBe('authenticated');
+  });
+
   it.each([
     ['503', () => json(503, '<html>down</html>'), 'NETWORK_ERROR'],
     ['429', () => json(429, errorBody('RATE_LIMITED', 429), { 'retry-after': '30' }), 'RATE_LIMITED'],
