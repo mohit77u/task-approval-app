@@ -29,16 +29,20 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
       // Underscore-prefixed names are the project's way of marking deliberately unused values (rest-omit patterns).
       '@typescript-eslint/no-unused-vars': [
         'error',
-        { varsIgnorePattern: '^_', argsIgnorePattern: '^_', ignoreRestSiblings: true },
+        {
+          varsIgnorePattern: '^_',
+          argsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
+        },
       ],
     },
   },
   {
-    // supertest response bodies are untyped (`any`) by design; asserting on them is the point of these files.
+    // Spec files build loosely typed fakes by design.
     files: ['src/**/*.spec.ts'],
     rules: {
       '@typescript-eslint/no-unsafe-assignment': 'off',

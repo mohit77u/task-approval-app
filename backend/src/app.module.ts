@@ -63,6 +63,8 @@ export class AppModule implements NestModule {
         { path: 'auth/refresh', method: RequestMethod.POST, version: '1' },
         { path: 'auth/logout', method: RequestMethod.POST, version: '1' },
         { path: 'health', method: RequestMethod.GET },
+        // Uptime monitors (UptimeRobot) probe with HEAD by default.
+        { path: 'health', method: RequestMethod.HEAD },
       )
       .forRoutes('*');
   }

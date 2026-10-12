@@ -8,8 +8,8 @@ import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 import { createValidationPipe } from './common/pipes/validation.pipe';
 
 /**
- * Everything that makes the HTTP surface behave correctly. Shared by main.ts and the e2e suite so tests exercise the
- * exact production configuration.
+ * Everything that makes the HTTP surface behave correctly. Kept in one place so any future HTTP-level test can
+ * exercise the exact production configuration.
  */
 export function configureApp(app: INestApplication): void {
   const config = app.get<ConfigService<Env, true>>(ConfigService);

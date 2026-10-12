@@ -2,11 +2,14 @@ import { Type } from 'class-transformer';
 import { IsInt, Max, Min } from 'class-validator';
 
 export const MAX_PAGE_SIZE = 100;
+const MAX_PAGE = 1_000_000;
 
 export class PaginationQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  // Bounded: an absurd page makes MySQL reject the OFFSET and surfaces as a 500.
+  @Max(MAX_PAGE)
   page: number = 1;
 
   @Type(() => Number)
