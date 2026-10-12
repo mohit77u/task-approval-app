@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
 import {
   Paginated,
   toPaginated,
@@ -44,10 +49,16 @@ export class TasksService {
   /**
    * The single definition of "which tasks may this viewer see". Employees only see tasks assigned to them; everything
    * that reads tasks (list, detail, comments, history, dashboard) starts from this query so the rules cannot drift.
-   * Callers must add further conditions with andWhere, never where, or the scope would be overwritten.
+   * Callers must add further conditions with andWhere, never where, or the scope would be overwritten. Pass `em` to
+   * read inside a transaction.
    */
-  createScopedQuery(user: AuthUser): SelectQueryBuilder<Task> {
-    const qb = this.tasks.createQueryBuilder('task');
+  createScopedQuery(
+    user: AuthUser,
+    em?: EntityManager,
+  ): SelectQueryBuilder<Task> {
+    const qb = (em ? em.getRepository(Task) : this.tasks).createQueryBuilder(
+      'task',
+    );
     if (user.role === RoleCode.EMPLOYEE)
       qb.andWhere('task.assigneeId = :scopeUserId', { scopeUserId: user.id });
     return qb;
@@ -104,9 +115,9 @@ export class TasksService {
   }
 
   async create(admin: AuthUser, dto: CreateTaskDto): Promise<TaskResponse> {
-    await this.users.ensureAssignableEmployee(dto.assigneeId);
-
     const id = await this.dataSource.transaction(async (em) => {
+      // Inside the transaction so the assignee row stays share-locked until the task is committed (see UsersService.remove).
+      await this.users.ensureAssignableEmployee(dto.assigneeId, em);
       const task = await em.getRepository(Task).save(
         em.getRepository(Task).create({
           ...dto,
@@ -138,22 +149,25 @@ export class TasksService {
     );
     if (Object.keys(changes).length === 0) return toTaskResponse(task, admin);
 
-    if (dto.assigneeId !== undefined && dto.assigneeId !== task.assigneeId) {
-      await this.users.ensureAssignableEmployee(dto.assigneeId);
-    }
+    await this.dataSource.transaction(async (em) => {
+      if (dto.assigneeId !== undefined && dto.assigneeId !== task.assigneeId) {
+        await this.users.ensureAssignableEmployee(dto.assigneeId, em);
+      }
 
-    // The status guard lives in the UPDATE itself, so an edit cannot slip in after a concurrent approval.
-    const result = await this.tasks
-      .createQueryBuilder()
-      .update()
-      .set(changes)
-      .where('id = :id AND status <> :completed AND deleted_at IS NULL', {
-        id,
-        completed: TaskStatus.COMPLETED,
-      })
-      .execute();
-    if (result.affected !== 1)
-      throw AppException.stateConflict('Completed tasks cannot be edited');
+      // The status guard lives in the UPDATE itself, so an edit cannot slip in after a concurrent approval.
+      const result = await em
+        .getRepository(Task)
+        .createQueryBuilder()
+        .update()
+        .set(changes)
+        .where('id = :id AND status <> :completed AND deleted_at IS NULL', {
+          id,
+          completed: TaskStatus.COMPLETED,
+        })
+        .execute();
+      if (result.affected !== 1)
+        throw AppException.stateConflict('Completed tasks cannot be edited');
+    });
 
     return this.getResponse(admin, id);
   }
@@ -163,38 +177,43 @@ export class TasksService {
     await this.tasks.softDelete(id);
   }
 
+  /**
+   * Applies a workflow step. The task is read inside the transaction, and the UPDATE is a compare-and-set on every fact
+   * the decision used (status and assignee) rather than a row lock: with a lock, a concurrent or double submission would
+   * wait, re-read the new status and fail as INVALID_TRANSITION, while the contract (spec 5.4) is STATE_CONFLICT.
+   */
   async transition(
     user: AuthUser,
     id: number,
     dto: TransitionTaskDto,
   ): Promise<TaskResponse> {
-    const task = await this.getForViewer(user, id);
-
-    const decision = evaluateTransition({
-      role: user.role,
-      isAssignee: task.assigneeId === user.id,
-      from: task.status,
-      to: dto.to,
-      note: dto.note,
-    });
-    if (!decision.allowed)
-      throw this.toTransitionException(decision, task.status, dto.to);
-
-    const from = task.status;
-    const note = dto.note?.trim() || null;
-
     await this.dataSource.transaction(async (em) => {
-      // Compare-and-set on the status we validated against. If anyone changed the task since we read it, zero rows
-      // match and we fail instead of writing a history row for a transition that did not happen.
+      const task = await this.createScopedQuery(user, em)
+        .andWhere('task.id = :id', { id })
+        .getOne();
+      if (!task) throw AppException.notFound('Task');
+
+      const decision = evaluateTransition({
+        role: user.role,
+        isAssignee: task.assigneeId === user.id,
+        from: task.status,
+        to: dto.to,
+        note: dto.note,
+      });
+      if (!decision.allowed)
+        throw this.toTransitionException(decision, task.status, dto.to);
+
+      // Zero rows means someone changed the status or reassigned the task since the read above (e.g. the old assignee
+      // submitting just after an admin reassigned it); fail instead of writing history for a step that did not happen.
       const result = await em
         .getRepository(Task)
         .createQueryBuilder()
         .update()
         .set({ status: dto.to })
-        .where('id = :id AND status = :from AND deleted_at IS NULL', {
-          id,
-          from,
-        })
+        .where(
+          'id = :id AND status = :from AND assignee_id = :assigneeId AND deleted_at IS NULL',
+          { id, from: task.status, assigneeId: task.assigneeId },
+        )
         .execute();
       if (result.affected !== 1) {
         throw AppException.stateConflict(
@@ -203,10 +222,10 @@ export class TasksService {
       }
       await em.getRepository(TaskStatusHistory).insert({
         taskId: id,
-        fromStatus: from,
+        fromStatus: task.status,
         toStatus: dto.to,
         actorId: user.id,
-        note,
+        note: dto.note?.trim() || null,
       });
     });
 

@@ -9,6 +9,13 @@ import { Env } from '../../config/env.validation';
 interface AccessPayload {
   sub: unknown;
   role: unknown;
+  iat: unknown;
+}
+
+/** What a valid signature proves. The role is only a hint: the auth middleware re-reads the authoritative one. */
+export interface AccessTokenClaims extends AuthUser {
+  /** `iat`, in whole seconds since the epoch (jsonwebtoken adds it on every sign). */
+  issuedAt: number;
 }
 
 @Injectable()
@@ -32,7 +39,7 @@ export class TokenService {
     );
   }
 
-  verifyAccessToken(token: string): AuthUser {
+  verifyAccessToken(token: string): AccessTokenClaims {
     let payload: AccessPayload;
     try {
       payload = this.jwt.verify(token, {
@@ -47,10 +54,11 @@ export class TokenService {
     if (
       typeof payload.sub !== 'number' ||
       typeof payload.role !== 'string' ||
-      !isRoleCode(payload.role)
+      !isRoleCode(payload.role) ||
+      typeof payload.iat !== 'number'
     ) {
       throw AppException.unauthenticated();
     }
-    return { id: payload.sub, role: payload.role };
+    return { id: payload.sub, role: payload.role, issuedAt: payload.iat };
   }
 }

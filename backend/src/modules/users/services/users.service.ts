@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import {
   Paginated,
   toPaginated,
@@ -26,11 +26,19 @@ export class UsersService {
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(Role) private readonly roles: Repository<Role>,
-    @InjectRepository(Task) private readonly tasks: Repository<Task>,
     @InjectRepository(RefreshToken)
     private readonly refreshTokens: Repository<RefreshToken>,
+    @InjectDataSource() private readonly dataSource: DataSource,
     private readonly passwords: PasswordService,
   ) {}
+
+  /**
+   * The live (not soft-deleted) user behind an access token, or null. Called on every authenticated request, so it is a
+   * single primary-key lookup (plus the eager role join).
+   */
+  findSessionUser(id: number): Promise<User | null> {
+    return this.users.findOne({ where: { id, deletedAt: IsNull() } });
+  }
 
   listRoles(): Promise<Role[]> {
     return this.roles.find({ order: { id: 'ASC' } });
@@ -82,15 +90,20 @@ export class UsersService {
     }
   }
 
-  /** Changes only the fields that were sent. A new password also signs the user out everywhere. */
+  /**
+   * Changes only the fields that were sent. A new password also signs the user out everywhere: refresh tokens are
+   * revoked, and `passwordChangedAt` makes the auth middleware refuse access tokens issued before it.
+   */
   async update(id: number, dto: UpdateUserDto): Promise<UserSummary> {
     rejectNullFields(dto, ['phone']);
     const user = await this.findActiveOrFail(id);
     if (dto.name !== undefined) user.name = dto.name;
     if (dto.email !== undefined) user.email = dto.email;
     if (dto.phone !== undefined) user.phone = dto.phone;
-    if (dto.password !== undefined)
+    if (dto.password !== undefined) {
       user.passwordHash = await this.passwords.hash(dto.password);
+      user.passwordChangedAt = new Date();
+    }
 
     try {
       await this.users.save(user);
@@ -103,35 +116,70 @@ export class UsersService {
   }
 
   /**
-   * Soft delete, for non-default users with no tasks. The row stays so tasks, comments and history keep their authors, and the email stays reserved
-   * (the unique index still covers it). An access token already issued lives until it expires (30 min at most);
-   * refresh and sign-in are refused immediately.
+   * Soft delete, for non-default users with no tasks. The row stays so tasks, comments and history keep their authors,
+   * and the email stays reserved (the unique index still covers it). Refresh tokens are revoked here and the auth
+   * middleware refuses the user's access tokens from the next request on.
+   *
+   * Check and delete run in one transaction holding the user row's write lock. Task creation and reassignment take a
+   * shared lock on the same row (see `ensureAssignableEmployee`), so a task cannot be assigned to this user between the
+   * count and the delete.
    */
   async remove(actorId: number, id: number): Promise<void> {
     if (actorId === id)
       throw AppException.conflict('You cannot delete your own account');
-    const user = await this.findActiveOrFail(id);
-    if (user.isDefault)
-      throw AppException.conflict('Default accounts cannot be deleted');
 
-    // Any status counts, COMPLETED included: a user with task history is kept so that history stays meaningful.
-    const assigned = await this.tasks.count({ where: { assigneeId: id } });
-    if (assigned > 0) {
-      throw AppException.conflict(
-        `This user has ${assigned} assigned task(s). Delete or reassign them before deleting the user.`,
-      );
-    }
+    await this.dataSource.transaction(async (em) => {
+      const user = await em.getRepository(User).findOne({
+        where: { id, deletedAt: IsNull() },
+        lock: { mode: 'pessimistic_write' },
+        // MySQL has no FOR UPDATE OF: joining the eager role would also lock the role row every user shares.
+        loadEagerRelations: false,
+      });
+      if (!user) throw AppException.notFound('User');
+      if (user.isDefault)
+        throw AppException.conflict('Default accounts cannot be deleted');
 
-    await this.users.update(user.id, { deletedAt: new Date() });
-    await this.revokeSessions(user.id);
+      // Every live task counts, whatever its status (COMPLETED included), so the admin decides what happens to that
+      // work first. Soft-deleted tasks do not block: the admin already removed them, and because deleting the user is
+      // itself a soft delete, their history keeps a valid author. A locking read, so it sees tasks committed by
+      // transactions that held the user row before us.
+      const assigned = await em
+        .getRepository(Task)
+        .createQueryBuilder('task')
+        .where('task.assigneeId = :id', { id })
+        .setLock('pessimistic_read')
+        .getCount();
+      if (assigned > 0) {
+        throw AppException.conflict(
+          `This user has ${assigned} assigned task(s). Delete or reassign them before deleting the user.`,
+        );
+      }
+
+      await em.getRepository(User).update(user.id, { deletedAt: new Date() });
+      await this.revokeSessions(user.id, em);
+    });
   }
 
-  /** Tasks can only be assigned to existing employees. Reported against the `assigneeId` field so forms can show it inline. */
-  async ensureAssignableEmployee(userId: number): Promise<User> {
-    const user = await this.users.findOne({
+  /**
+   * Tasks can only be assigned to existing employees. Reported against the `assigneeId` field so forms can show it
+   * inline. Pass the caller's transaction manager: the shared row lock then holds until that transaction commits, so a
+   * concurrent user delete (which takes the write lock) either waits and then sees the new task, or wins first and this
+   * read sees the user as deleted.
+   */
+  async ensureAssignableEmployee(
+    userId: number,
+    em: EntityManager,
+  ): Promise<User> {
+    const user = await em.getRepository(User).findOne({
       where: { id: userId, deletedAt: IsNull() },
+      lock: { mode: 'pessimistic_read' },
+      // Lock only the user row, not the shared role row (MySQL cannot restrict FOR SHARE to one table of a join).
+      loadEagerRelations: false,
     });
-    if (!user || user.role.code !== RoleCode.EMPLOYEE) {
+    const role = user
+      ? await em.getRepository(Role).findOne({ where: { id: user.roleId } })
+      : null;
+    if (!user || !role || role.code !== RoleCode.EMPLOYEE) {
       throw AppException.validation([
         {
           field: 'assigneeId',
@@ -139,6 +187,7 @@ export class UsersService {
         },
       ]);
     }
+    user.role = role;
     return user;
   }
 
@@ -150,8 +199,14 @@ export class UsersService {
     return user;
   }
 
-  private async revokeSessions(userId: number): Promise<void> {
-    await this.refreshTokens.update(
+  private async revokeSessions(
+    userId: number,
+    em?: EntityManager,
+  ): Promise<void> {
+    const refreshTokens = em
+      ? em.getRepository(RefreshToken)
+      : this.refreshTokens;
+    await refreshTokens.update(
       { userId, revokedAt: IsNull() },
       { revokedAt: new Date() },
     );

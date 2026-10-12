@@ -36,10 +36,15 @@ describe('TokenService', () => {
       id: 7,
       role: RoleCode.ADMIN,
     });
+    const before = Math.floor(Date.now() / 1000);
     expect(service.verifyAccessToken(token)).toEqual({
       id: 7,
       role: RoleCode.ADMIN,
+      issuedAt: expect.any(Number) as number,
     });
+    expect(service.verifyAccessToken(token).issuedAt).toBeGreaterThanOrEqual(
+      before - 1,
+    );
   });
 
   it('reports an expired token as TOKEN_EXPIRED so clients know to refresh', async () => {
@@ -74,6 +79,17 @@ describe('TokenService', () => {
       { secret: SECRET, expiresIn: 60 },
     );
     expect(codeOf(() => service.verifyAccessToken(odd))).toBe(
+      ErrorCode.UNAUTHENTICATED,
+    );
+  });
+
+  it('rejects a token without an issued-at claim, since revocation checks depend on it', async () => {
+    const { service, jwt } = build();
+    const noIat = await jwt.signAsync(
+      { sub: 7, role: 'ADMIN' },
+      { secret: SECRET, expiresIn: 60, noTimestamp: true },
+    );
+    expect(codeOf(() => service.verifyAccessToken(noIat))).toBe(
       ErrorCode.UNAUTHENTICATED,
     );
   });

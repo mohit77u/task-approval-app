@@ -38,6 +38,10 @@ export class User {
   @Column({ type: 'varchar', length: 255 })
   passwordHash!: string;
 
+  /** Set whenever the password changes. Access tokens issued before it are refused by the auth middleware. */
+  @Column({ type: 'datetime', precision: 3, nullable: true })
+  passwordChangedAt!: Date | null;
+
   @Column()
   roleId!: number;
 
