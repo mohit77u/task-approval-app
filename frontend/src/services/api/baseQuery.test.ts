@@ -5,7 +5,7 @@ import { authApi } from './authApi';
 import { coldStartRetry } from './baseQuery';
 import { tasksApi } from './tasksApi';
 
-vi.mock('@/lib/notify', () => ({ notify: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
+vi.mock('@/lib/notify', () => ({ notify: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn(), dismiss: vi.fn() } }));
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}): Response =>
   new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -16,9 +16,11 @@ const pathOf = (request: Request): string => new URL(request.url).pathname;
 
 describe('baseQuery', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     coldStartRetry.delaysMs = [0, 0, 0];
   });
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -143,5 +145,78 @@ describe('baseQuery', () => {
     const store = makeStore();
     store.dispatch(sessionEnded({ notify: false }));
     expect(store.getState().auth).toEqual({ user: null, status: 'unauthenticated' });
+  });
+
+  it('empties the api cache after the session ends', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (request: Request) => (pathOf(request) === '/api/tasks' ? json(200, emptyPage) : json(401, errorBody('UNAUTHENTICATED')))));
+    const store = makeStore();
+    await store.dispatch(tasksApi.endpoints.listTasks.initiate({ page: 1, limit: 20 }));
+    expect(Object.keys(store.getState().api.queries)).toHaveLength(1);
+
+    store.dispatch(sessionEnded({ notify: false }));
+    await new Promise((resolve) => setTimeout(resolve, 0)); // the wipe is deferred one tick
+    expect(Object.keys(store.getState().api.queries)).toHaveLength(0);
+  });
+
+  it.each([
+    ['503', () => json(503, '<html>down</html>'), 'NETWORK_ERROR'],
+    ['429', () => json(429, errorBody('RATE_LIMITED', 429), { 'retry-after': '30' }), 'RATE_LIMITED'],
+    ['network failure', () => Promise.reject(new TypeError('Failed to fetch')), 'NETWORK_ERROR'],
+  ])('keeps the session when the refresh call fails with %s', async (_label, refreshResponse, code) => {
+    const user = { id: 1, name: 'A', email: 'a@x.dev', role: { id: 1, code: 'ADMIN', name: 'Admin' } };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (request: Request) => {
+        const path = pathOf(request);
+        if (path === '/api/auth/login') return json(200, { user });
+        if (path === '/api/auth/refresh') return refreshResponse();
+        return json(401, errorBody('TOKEN_EXPIRED'));
+      }),
+    );
+    coldStartRetry.delaysMs = []; // a failing refresh is not retried here; only the outcome matters
+    const store = makeStore();
+    await store.dispatch(authApi.endpoints.login.initiate({ email: 'a@x.dev', password: 'pw' }));
+
+    const result = await store.dispatch(tasksApi.endpoints.listTasks.initiate({ page: 1, limit: 20 }));
+
+    expect(store.getState().auth.status).toBe('authenticated');
+    expect(result.error).toMatchObject({ code });
+    expect((result.error as { handled?: boolean }).handled).toBeUndefined();
+  });
+
+  it('ends the session when the refresh call itself answers 401', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(401, errorBody('TOKEN_EXPIRED'))));
+    const store = makeStore();
+    const result = await store.dispatch(tasksApi.endpoints.listTasks.initiate({ page: 1, limit: 20 }));
+    expect(store.getState().auth.status).toBe('unauthenticated');
+    expect((result.error as { handled?: boolean }).handled).toBe(true);
+  });
+
+  it('keeps the waking notice up across a ~minute-long cold start, then clears it', async () => {
+    vi.useFakeTimers();
+    const { notify } = await import('@/lib/notify');
+    coldStartRetry.delaysMs = [2000, 4000, 8000, 15000, 15000, 15000, 15000];
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => (++calls <= 7 ? json(503, '<html>wake</html>') : json(200, emptyPage))));
+
+    const store = makeStore();
+    const pending = store.dispatch(tasksApi.endpoints.listTasks.initiate({ page: 1, limit: 20 }));
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(store.getState().ui.serverWaking).toBe(true);
+    expect(notify.dismiss).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(60000);
+    const result = await pending;
+    expect(result.isSuccess).toBe(true);
+    expect(store.getState().ui.serverWaking).toBe(false);
+    expect(notify.dismiss).toHaveBeenCalledWith('server-waking');
+  });
+
+  it('stops waking-up retries once the backoff schedule is exhausted', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(503, '<html>down</html>')));
+    const store = makeStore();
+    const result = await store.dispatch(tasksApi.endpoints.listTasks.initiate({ page: 1, limit: 20 }));
+    expect(result.isError).toBe(true);
+    expect(store.getState().ui.serverWaking).toBe(false);
   });
 });

@@ -12,8 +12,15 @@ type RawResult = Awaited<ReturnType<typeof rawBaseQuery>>;
 const AUTH_ENDPOINTS = ['auth/login', 'auth/refresh', 'auth/logout'];
 const GATEWAY_STATUSES = [502, 503, 504];
 
-/** Backoff between attempts when the (free, sleeping) backend is waking up. Mutable so tests can make it instant. */
-export const coldStartRetry = { delaysMs: [1000, 2000, 4000] };
+/**
+ * Backoff between attempts when the (free, sleeping) backend is waking up; a cold start takes about a minute, so the
+ * delays add up to ~74s. Mutable so tests can make it instant.
+ */
+export const coldStartRetry = { delaysMs: [2000, 4000, 8000, 15000, 15000, 15000, 15000] };
+
+const WAKING_TOAST_ID = 'server-waking';
+/** Requests currently retrying against a sleeping backend; the banner stays up until the last one settles. */
+let wakingRequests = 0;
 
 const urlOf = (args: string | FetchArgs): string => (typeof args === 'string' ? args : args.url);
 const isGet = (args: string | FetchArgs): boolean => typeof args === 'string' || !args.method || args.method.toUpperCase() === 'GET';
@@ -43,37 +50,53 @@ async function requestWithColdStartRetry(
   extraOptions: object,
 ): Promise<RawResult> {
   let result = await rawBaseQuery(args, api, extraOptions);
+  let counted = false;
 
-  for (let attempt = 0; attempt < coldStartRetry.delaysMs.length; attempt += 1) {
-    if (!isGet(args) || !isColdStartFailure(result.error) || api.signal.aborted) break;
-    if (attempt === 0) {
-      api.dispatch(setServerWaking(true));
-      notify.info('Waking up the server, this can take up to a minute…', { id: 'server-waking', duration: 15000 });
+  try {
+    for (let attempt = 0; attempt < coldStartRetry.delaysMs.length; attempt += 1) {
+      if (!isGet(args) || !isColdStartFailure(result.error) || api.signal.aborted) break;
+      if (!counted) {
+        counted = true;
+        wakingRequests += 1;
+        api.dispatch(setServerWaking(true));
+        // Infinity: the notice stays until the request settles, whatever the cold start takes.
+        notify.info('Waking up the server, this can take up to a minute…', { id: WAKING_TOAST_ID, duration: Infinity });
+      }
+      await sleep(coldStartRetry.delaysMs[attempt]);
+      result = await rawBaseQuery(args, api, extraOptions);
     }
-    await sleep(coldStartRetry.delaysMs[attempt]);
-    result = await rawBaseQuery(args, api, extraOptions);
+  } finally {
+    if (counted) {
+      wakingRequests -= 1;
+      if (wakingRequests === 0) {
+        api.dispatch(setServerWaking(false));
+        notify.dismiss(WAKING_TOAST_ID);
+      }
+    }
   }
 
-  if (!result.error || !isColdStartFailure(result.error)) api.dispatch(setServerWaking(false));
   return result;
 }
 
-let refreshInFlight: Promise<boolean> | null = null;
+/** Shared across store instances, which is fine in the browser (one store); only tests create several. */
+let refreshInFlight: Promise<RawResult> | null = null;
 
 /**
  * Many requests can expire at the same moment. They all share one refresh call: a second concurrent refresh would
  * present an already-rotated token and look like token theft to the backend.
  */
-function refreshOnce(api: BaseQueryApi, extraOptions: object): Promise<boolean> {
+function refreshOnce(api: BaseQueryApi, extraOptions: object): Promise<RawResult> {
   if (!refreshInFlight) {
-    refreshInFlight = requestWithColdStartRetry({ url: 'auth/refresh', method: 'POST' }, api, extraOptions)
-      .then((result) => !result.error)
-      .finally(() => {
-        refreshInFlight = null;
-      });
+    refreshInFlight = requestWithColdStartRetry({ url: 'auth/refresh', method: 'POST' }, api, extraOptions).finally(() => {
+      refreshInFlight = null;
+    });
   }
   return refreshInFlight;
 }
+
+/** Only a definite "no" from the server ends the session; a network blip, 5xx or 429 says nothing about the cookie. */
+const isSessionRejected = (error: FetchBaseQueryError | undefined): boolean =>
+  error?.status === 401 || error?.status === 403;
 
 interface AuthAwareState {
   auth?: { status?: string };
@@ -87,8 +110,12 @@ export const baseQuery: BaseQueryFn<string | FetchArgs, unknown, ApiError, objec
   let result = await requestWithColdStartRetry(args, api, extraOptions);
 
   if (isAuthFailure(result.error) && !isAuthEndpoint(args)) {
-    if (await refreshOnce(api, extraOptions)) {
+    const refresh = await refreshOnce(api, extraOptions);
+    if (!refresh.error) {
       result = await requestWithColdStartRetry(args, api, extraOptions);
+    } else if (!isSessionRejected(refresh.error)) {
+      // Transient refresh failure: keep the session and surface the real problem so the usual error toast applies.
+      return { error: normalizeError(refresh.error, refresh.meta?.response?.headers.get('retry-after')), meta: refresh.meta };
     } else {
       const wasSignedIn = (api.getState() as AuthAwareState).auth?.status === 'authenticated';
       api.dispatch(sessionEnded({ notify: wasSignedIn }));

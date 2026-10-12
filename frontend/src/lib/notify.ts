@@ -19,4 +19,8 @@ export const notify = {
   error: (message: string, options?: NotifyOptions): void => show('error', message, options),
   warning: (message: string, options?: NotifyOptions): void => show('warning', message, options),
   info: (message: string, options?: NotifyOptions): void => show('info', message, options),
+  /** Removes a toast that was shown with a known id (e.g. a progress notice that is no longer true). */
+  dismiss: (id: string): void => {
+    toast.dismiss(id);
+  },
 };
