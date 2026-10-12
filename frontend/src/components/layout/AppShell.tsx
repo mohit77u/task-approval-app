@@ -8,7 +8,8 @@ export function AppShell({ children }: { children: ReactNode }): React.JSX.Eleme
     <div className="flex min-h-screen flex-col">
       <ServerStatusBanner />
       <div className="flex flex-1">
-        <aside className="hidden w-60 shrink-0 border-r p-4 md:block">
+        {/* Sticky + viewport height: the sidebar stays put while long pages (task detail) scroll; its own overflow handles short screens. */}
+        <aside className="hidden w-60 shrink-0 self-start overflow-y-auto border-r p-4 md:sticky md:top-0 md:block md:h-screen">
           <p className="mb-6 px-3 text-lg font-semibold tracking-tight">Task &amp; Approval</p>
           <SidebarNav />
         </aside>

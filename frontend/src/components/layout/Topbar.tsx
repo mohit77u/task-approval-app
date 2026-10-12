@@ -15,7 +15,7 @@ export function Topbar(): React.JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="flex h-14 items-center justify-between border-b px-4">
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="flex items-center gap-2">
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetTrigger asChild>
