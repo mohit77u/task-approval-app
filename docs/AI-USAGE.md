@@ -3,7 +3,9 @@
 ## Tools
 
 - **Claude Code** (Anthropic's CLI, Claude Sonnet 5.5), using brainstorming, planning and subagent-driven development: each implementation task was done by a subagent and followed by a review loop (spec compliance, then code quality) before the next task.
-- No other AI tool is recorded here.
+- **Cursor** (the AI-enabled code editor / IDE), used by the project owner as the main editor for reading, running and editing the code.
+- **GitHub Copilot**, used inside the Cursor editor for inline code suggestions.
+- Cursor and Copilot were used interactively by the owner; their suggestions were not logged, so this note cannot say which individual lines came from them. Claude Code did the bulk of the generation described below.
 
 ## What AI did
 
