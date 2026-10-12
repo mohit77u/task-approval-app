@@ -51,6 +51,7 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
@@ -65,6 +66,12 @@ function DialogContent({
           className
         )}
         {...props}
+        onInteractOutside={(event) => {
+          // Product rule: a stray click on the backdrop must never discard what the user typed.
+          // Esc, the X and explicit Cancel buttons still close; nested popovers dismiss on their own layer.
+          event.preventDefault()
+          onInteractOutside?.(event)
+        }}
       >
         {children}
         {showCloseButton && (
