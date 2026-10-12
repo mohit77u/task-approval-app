@@ -5,14 +5,14 @@ A small full-stack app where an **Admin** creates and assigns tasks, **Employees
 | | |
 |---|---|
 | **Live app** | _not deployed yet: the URL will be added here once the app is hosted_ |
-| **API docs (Swagger)** | `<API_URL>/api/docs` (locally: http://localhost:4000/api/docs) |
+| **API docs (Swagger)** | locally: http://localhost:4000/api/docs (off in production unless `ENABLE_SWAGGER=true`) |
 | **Source** | https://github.com/mohit77u/task-approval-app |
 
 > **Cold start (free tier hosting).** The intended deployment (Vercel + Render free + hosted MySQL) puts the API to sleep when idle. The first request after a quiet period can take up to about a minute; the UI shows a "waking up the server" banner, retries GETs by itself and then continues. This does not affect a local run.
 
 ## Demo accounts
 
-Created by `npm run seed`. These are public demo credentials, not real ones.
+Created by `npm run seed`. These are public demo credentials, not real ones. To seed a shared or hosted instance with private passwords instead, set `SEED_ADMIN_PASSWORD` and/or `SEED_EMPLOYEE_PASSWORD` before running the seed (they only apply to accounts the seed creates; existing users are never modified).
 
 | Role | Email | Password |
 |---|---|---|
@@ -64,8 +64,8 @@ Browser --HTTPS--> Next.js (App Router)
 Intended hosting: Vercel (frontend), Render (backend), a hosted MySQL such as Aiven. See [Known limitations](#known-limitations): this repository has not been deployed by this documentation's author.
 
 - **Why a proxy:** a frontend and backend on different hosts (for example `*.vercel.app` and `*.onrender.com`) are different *sites*, so calling the API directly would make the auth cookies third-party and Safari / incognito would drop them. With the Next.js `rewrites` proxy the browser only talks to one origin and cookies stay first-party. The backend still enforces an exact CORS allow-list and an `Origin` check on state-changing requests.
-- **API shape:** URI-versioned REST. Business routes are `/api/v1/...`; `/api/health` is version-neutral (for uptime monitors); Swagger UI is at `/api/docs`. The frontend calls `/api/v1/...` and the rewrite forwards `/api/:path*` to `BACKEND_URL`.
-- **Auth:** 30-minute JWT access token (cookie path `/api`) plus a 1-year opaque refresh token (cookie path `/api/v1/auth`), both `httpOnly`. Refresh tokens are stored only as SHA-256 hashes, rotated on every use, and reuse of a rotated token revokes the token family. The frontend refreshes transparently (one refresh at a time) and retries.
+- **API shape:** URI-versioned REST. Business routes are `/api/v1/...`; `/api/health` is version-neutral (for uptime monitors); Swagger UI is at `/api/docs` outside production (in production only with `ENABLE_SWAGGER=true`). The frontend calls `/api/v1/...` and the rewrite forwards `/api/:path*` to `BACKEND_URL`.
+- **Auth:** 30-minute JWT access token (cookie path `/api`) plus a 1-year opaque refresh token (cookie path `/api/v1/auth`), both `httpOnly`. Refresh tokens are stored only as SHA-256 hashes, rotated on every use, and reuse of a rotated token revokes the token family. Every authenticated request also re-reads the user (one primary-key lookup): a deleted user, or a token issued before the user's last password change, gets `401`, and the role is taken from the database, so these changes apply immediately rather than when the access token expires. The frontend refreshes transparently (one refresh at a time) and retries.
 - **Authorization:** enforced in the backend. JWT authentication and the Origin check are Nest **middleware** (login, refresh, logout and health are excluded from JWT auth); `RolesGuard` and the rate limiter are global guards; reads of tasks go through `TasksService.createScopedQuery`, so employees can only read their own tasks. Other people's task ids answer `404`.
 - **Data:** MySQL via TypeORM entities and a migration (`synchronize: false`). Tables: `roles`, `users`, `tasks`, `task_comments`, `task_status_history`, `refresh_tokens`.
 - **Errors:** every failure uses one shape `{ statusCode, code, message, details?, requestId, timestamp, path }`; the frontend normalises it into one `ApiError` and shows a toast.
@@ -110,12 +110,12 @@ If you use your own MySQL instead of the container, create an empty database fir
 
 | Where | Variables |
 |---|---|
-| Backend | `NODE_ENV`, `PORT`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSL`, `DB_SSL_CA`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `FRONTEND_ORIGINS`, `TRUST_PROXY_HOPS`, `THROTTLING_ENABLED` |
+| Backend | `NODE_ENV`, `PORT`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSL`, `DB_SSL_CA`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `FRONTEND_ORIGINS`, `TRUST_PROXY_HOPS`, `THROTTLING_ENABLED`, `ENABLE_SWAGGER` (optional), `SEED_ADMIN_PASSWORD` / `SEED_EMPLOYEE_PASSWORD` (optional, seed only) |
 | Frontend | `BACKEND_URL` (server-side only; read by `next.config.ts` when the app is built or started) |
 
-`backend/.env.example` and `frontend/.env.example` list each one. Never commit real values; `.env*` files are git-ignored except the `.example` files. The backend validates its variables at start-up (`backend/src/config/env.validation.ts`) and refuses to boot on a missing value or these insecure settings: `JWT_ACCESS_SECRET` shorter than 32 characters; `COOKIE_SAMESITE=none` without `COOKIE_SECURE=true`; and when `NODE_ENV=production`, `COOKIE_SECURE` not true or any `FRONTEND_ORIGINS` entry that is not `https://` or contains a wildcard.
+`backend/.env.example` and `frontend/.env.example` list each one. Never commit real values; `.env*` files are git-ignored except the `.example` files. The backend validates its variables at start-up (`backend/src/config/env.validation.ts`) and refuses to boot on a missing value or these insecure settings: `JWT_ACCESS_SECRET` shorter than 32 characters; `ACCESS_TOKEN_TTL` not of the form `<n>s|m|h|d` (e.g. `30m`); `COOKIE_SAMESITE=none` without `COOKIE_SECURE=true`; and when `NODE_ENV=production`: `COOKIE_SECURE` not true, any `FRONTEND_ORIGINS` entry that is not `https://` or contains a wildcard, a `JWT_ACCESS_SECRET` that is the `.env.example` placeholder or obviously not random, `TRUST_PROXY_HOPS` below 1, or `DB_SSL=true` without `DB_SSL_CA`.
 
-**Recommended production settings** (not all are enforced by the validator): `NODE_ENV=production`, `COOKIE_SECURE=true`, `COOKIE_SAMESITE=lax` (the proxy keeps cookies first-party), `FRONTEND_ORIGINS` = the exact https URL of the frontend, `DB_SSL=true` (plus `DB_SSL_CA` if the provider needs it), a freshly generated `JWT_ACCESS_SECRET`, and `TRUST_PROXY_HOPS` set to the number of reverse proxies in front of the API (at least `1` behind Render, so rate limiting and client IPs see the real address; the validator only requires `>= 0`). For the frontend set `BACKEND_URL` to the public API URL **before** `next build`: a production build fails without it.
+**Recommended production settings:** `NODE_ENV=production`, `COOKIE_SECURE=true`, `COOKIE_SAMESITE=lax` (the proxy keeps cookies first-party), `FRONTEND_ORIGINS` = the exact https URL of the frontend, `DB_SSL=true` with the provider's CA certificate in `DB_SSL_CA`, a freshly generated `JWT_ACCESS_SECRET`, and `TRUST_PROXY_HOPS` set to the number of reverse proxies in front of the API (at least `1` behind Render, so rate limiting and client IPs see the real address). Leave `ENABLE_SWAGGER` unset to keep the API docs private. For the frontend set `BACKEND_URL` to the public API URL **before** `next build`: a production build fails without it.
 
 ### Database: initialise, migrate, seed
 
@@ -130,7 +130,7 @@ If you use your own MySQL instead of the container, create an empty database fir
 ## Tests
 
 ```bash
-# Backend unit tests (state machine, validation, tokens, cookies, origin middleware, env); no database needed
+# Backend unit tests (state machine, transitions, user deletion, auth middleware, tokens, cookies, errors, env); no database needed
 cd backend && npm test
 
 # Frontend unit tests (API layer re-auth/retry, error normalisation, filters, hooks, status control)
@@ -150,11 +150,10 @@ bcrypt password hashing; parameterized queries only (TypeORM); input validation 
 
 ## Known limitations
 
-- **No backend HTTP / end-to-end tests.** The backend has unit tests only. An earlier API e2e suite was deliberately removed, so authorization, the approval flow, token rotation and throttling are covered by unit tests of their parts plus the Playwright smoke test, not by HTTP-level backend tests. `backend/.env.test*` and the `mysql_test` service in `docker-compose.yml` are leftovers from that suite and are not used by any current script.
+- **No backend HTTP / end-to-end tests.** The backend has unit tests only. An earlier API e2e suite was deliberately removed, so authorization, the approval flow, token rotation and throttling are covered by unit tests of their parts plus the Playwright smoke test, not by HTTP-level backend tests.
 - **Not deployed by this repo's docs.** The Vercel / Render / hosted MySQL setup is the intended target; no live URL is claimed here. Free-tier cold starts (up to about a minute) apply when hosted that way; an uptime monitor pinging `/api/health` can reduce them.
 - **One session per browser profile:** cookies are shared across tabs, so two roles at once need an incognito window or another browser.
-- **Access token outlives account changes:** the access JWT is stateless and stays valid for up to 30 minutes after a user is deleted or changes password (refresh tokens are revoked, access tokens are not).
-- **Swagger is public**, including in production (`/api/docs`); it documents the API but needs a session cookie to call protected routes.
+- **Same-second password change:** a JWT's issue time has one-second resolution, so an access token issued in the same second as a password change is also refused; signing in again a moment later works.
 - **Soft-deleted users keep their email reserved:** that email cannot be reused for a new user.
 - **Long-lived refresh token:** the 1-year lifetime is a deliberate convenience trade-off, mitigated by rotation, reuse detection, hashing at rest and server-side revocation. A production system would likely use a shorter lifetime with an absolute session cap.
 - **Roles are data, permissions are code:** adding a row to `roles` makes it selectable when creating a user, but what that role may do is defined in guards and the state machine. There is no dynamic permission system.

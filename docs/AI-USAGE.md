@@ -25,4 +25,4 @@
 
 ## Known gaps
 
-See "Known limitations" in the [README](../README.md): notably no backend HTTP/e2e tests, access tokens valid up to 30 minutes after user deletion or password change, public Swagger, free-tier cold starts if hosted that way, and shared sessions across tabs.
+See "Known limitations" in the [README](../README.md): notably no backend HTTP/e2e tests, free-tier cold starts if hosted that way, and shared sessions across tabs. A later hardening pass closed earlier gaps: access tokens are now refused as soon as a user is deleted or their password changes, Swagger is off in production unless enabled, and insecure production settings stop the app from booting.
