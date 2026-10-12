@@ -39,7 +39,7 @@ export default tseslint.config(
   },
   {
     // supertest response bodies are untyped (`any`) by design; asserting on them is the point of these files.
-    files: ['test/**/*.ts', 'src/**/*.spec.ts'],
+    files: ['src/**/*.spec.ts'],
     rules: {
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/no-unsafe-member-access': 'off',

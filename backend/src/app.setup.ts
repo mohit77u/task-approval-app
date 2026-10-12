@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
@@ -21,6 +21,8 @@ export function configureApp(app: INestApplication): void {
   );
 
   app.setGlobalPrefix('api');
+  // URI versioning: routes are served at /api/v1/...; a breaking change ships as v2 next to v1.
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.use(helmet());
   app.use(cookieParser());
   app.enableCors({

@@ -59,9 +59,9 @@ export class AppModule implements NestModule {
     consumer
       .apply(JwtAuthMiddleware)
       .exclude(
-        { path: 'auth/login', method: RequestMethod.POST },
-        { path: 'auth/refresh', method: RequestMethod.POST },
-        { path: 'auth/logout', method: RequestMethod.POST },
+        { path: 'auth/login', method: RequestMethod.POST, version: '1' },
+        { path: 'auth/refresh', method: RequestMethod.POST, version: '1' },
+        { path: 'auth/logout', method: RequestMethod.POST, version: '1' },
         { path: 'health', method: RequestMethod.GET },
       )
       .forRoutes('*');

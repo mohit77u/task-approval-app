@@ -34,7 +34,7 @@ export function buildCookieOptions(
   return {
     access: { ...common, path: '/api' },
     // Limited to the auth routes so the long-lived credential is not sent with every API call.
-    refresh: { ...common, path: '/api/auth' },
+    refresh: { ...common, path: '/api/v1/auth' },
   };
 }
 

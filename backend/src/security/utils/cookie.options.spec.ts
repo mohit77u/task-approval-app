@@ -6,7 +6,7 @@ describe('buildCookieOptions', () => {
   it('scopes the refresh cookie to the auth routes and the access cookie to the API', () => {
     const { access, refresh } = buildCookieOptions(base);
     expect(access.path).toBe('/api');
-    expect(refresh.path).toBe('/api/auth');
+    expect(refresh.path).toBe('/api/v1/auth');
   });
 
   it('is httpOnly, host-only and follows the environment for Secure and SameSite', () => {
@@ -33,7 +33,7 @@ describe('buildCookieOptions', () => {
     const { refresh } = buildCookieOptions(base);
     const cleared = clearOptions(refresh);
     expect(cleared.maxAge).toBeUndefined();
-    expect(cleared.path).toBe('/api/auth');
+    expect(cleared.path).toBe('/api/v1/auth');
     expect(cleared.httpOnly).toBe(true);
   });
 });
