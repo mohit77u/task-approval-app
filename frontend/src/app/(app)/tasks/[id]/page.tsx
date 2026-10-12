@@ -27,7 +27,7 @@ export default function TaskDetailPage(): React.JSX.Element {
   const router = useRouter();
   const { isAdmin } = useAuth();
   const confirm = useConfirm();
-  const { run } = useApiAction();
+  const { run, isPending } = useApiAction();
   const [deleteTask] = useDeleteTaskMutation();
   const [editOpen, setEditOpen] = useState(false);
 
@@ -93,11 +93,11 @@ export default function TaskDetailPage(): React.JSX.Element {
             <StatusBadge status={data.status} />
             {isAdmin && (
               <>
-                <Button variant="outline" size="sm" disabled={data.status === 'COMPLETED'} onClick={() => setEditOpen(true)}>
+                <Button variant="outline" size="sm" disabled={data.status === 'COMPLETED' || isPending} onClick={() => setEditOpen(true)}>
                   <Pencil className="mr-1 h-4 w-4" aria-hidden />
                   Edit
                 </Button>
-                <Button variant="outline" size="sm" className="text-destructive" onClick={() => void onDelete()}>
+                <Button variant="outline" size="sm" className="text-destructive" disabled={isPending} onClick={() => void onDelete()}>
                   <Trash2 className="mr-1 h-4 w-4" aria-hidden />
                   Delete
                 </Button>
@@ -110,7 +110,7 @@ export default function TaskDetailPage(): React.JSX.Element {
       <Card>
         <CardContent className="space-y-6 p-6">
           <TaskDetails task={data} />
-          <TaskStatusControl task={data} />
+          <TaskStatusControl task={data} isFetching={task.isFetching} />
         </CardContent>
       </Card>
 

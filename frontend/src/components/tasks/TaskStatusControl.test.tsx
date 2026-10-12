@@ -75,4 +75,19 @@ describe('TaskStatusControl', () => {
     expect(screen.getByLabelText('Status')).toBeDisabled();
     expect(screen.getByText(/Waiting for an admin/)).toBeInTheDocument();
   });
+
+  it('keeps the value and re-enables the control after a rejected transition', async () => {
+    confirm.mockResolvedValue({ confirmed: true, note: '' });
+    transition.mockRejectedValue(new Error('boom'));
+    render(<TaskStatusControl task={task} />);
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'IN_PROGRESS' } });
+    await waitFor(() => expect(transition).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByLabelText('Status')).toBeEnabled());
+    expect(screen.getByLabelText('Status')).toHaveValue('PENDING');
+  });
+
+  it('is disabled while the task is refetching', () => {
+    render(<TaskStatusControl task={task} isFetching />);
+    expect(screen.getByLabelText('Status')).toBeDisabled();
+  });
 });

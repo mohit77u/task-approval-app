@@ -15,7 +15,7 @@ import { RoleCode, Task, TaskStatus } from '@/types/api';
  * cancelling the confirmation (or a failed request) leaves it showing the real value with no extra code.
  * Which options are enabled comes from `task.allowedTransitions`; the backend enforces the same rules independently.
  */
-export function TaskStatusControl({ task }: { task: Task }): React.JSX.Element {
+export function TaskStatusControl({ task, isFetching = false }: { task: Task; /** True while the task is being refetched, so stale allowedTransitions are never offered. */ isFetching?: boolean }): React.JSX.Element {
   const { user } = useAuth();
   const confirm = useConfirm();
   const [transition] = useTransitionTaskMutation();
@@ -49,7 +49,7 @@ export function TaskStatusControl({ task }: { task: Task }): React.JSX.Element {
   return (
     <div className="space-y-2">
       <Label htmlFor="task-status">Status</Label>
-      <Select value={task.status} onValueChange={(value) => void onSelect(value)} disabled={!canChange || isPending}>
+      <Select value={task.status} onValueChange={(value) => void onSelect(value)} disabled={!canChange || isPending || isFetching}>
         <SelectTrigger id="task-status" className="w-full sm:w-64">
           <SelectValue />
         </SelectTrigger>

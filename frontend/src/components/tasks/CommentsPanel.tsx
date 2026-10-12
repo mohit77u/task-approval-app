@@ -61,7 +61,7 @@ export function CommentsPanel({ taskId }: { taskId: number }): React.JSX.Element
         <label htmlFor="new-comment" className="text-sm font-medium">
           Add a comment
         </label>
-        <Textarea id="new-comment" rows={3} maxLength={MAX_LENGTH} value={body} onChange={(event) => setBody(event.target.value)} />
+        <Textarea id="new-comment" rows={3} disabled={isPending} maxLength={MAX_LENGTH} value={body} onChange={(event) => setBody(event.target.value)} />
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">
             {body.length}/{MAX_LENGTH}
