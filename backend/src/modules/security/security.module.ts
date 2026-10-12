@@ -8,8 +8,8 @@ import { AppThrottlerGuard } from './guards/app-throttler.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { OriginGuard } from './guards/origin.guard';
 import { RolesGuard } from './guards/roles.guard';
-import { PasswordService } from './password.service';
-import { TokenService } from './token.service';
+import { PasswordService } from './services/password.service';
+import { TokenService } from './services/token.service';
 
 /**
  * Global guards run in the order their providers are declared: origin check, then authentication, then rate limiting

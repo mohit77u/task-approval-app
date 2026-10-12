@@ -4,8 +4,8 @@ import type { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
 import { AppException } from '../../../common/errors/app.exception';
 import '../../../common/types/request.types';
-import { ACCESS_COOKIE } from '../cookie.options';
-import { TokenService } from '../token.service';
+import { ACCESS_COOKIE } from '../utils/cookie.options';
+import { TokenService } from '../services/token.service';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {

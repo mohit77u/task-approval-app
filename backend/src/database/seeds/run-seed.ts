@@ -1,8 +1,11 @@
 import * as bcrypt from 'bcrypt';
 import { DataSource } from 'typeorm';
 import { TaskStatus } from '../../common/enums/task-status.enum';
-import { Role, Task, TaskStatusHistory, User } from '../entities';
-import { BCRYPT_COST } from '../../modules/security/password.constants';
+import { Role } from '../../modules/users/entities/role.entity';
+import { Task } from '../../modules/tasks/entities/task.entity';
+import { TaskStatusHistory } from '../../modules/tasks/entities/task-status-history.entity';
+import { User } from '../../modules/users/entities/user.entity';
+import { BCRYPT_COST } from '../../modules/security/utils/password.constants';
 import { DEMO_USERS, SAMPLE_TASKS, SEED_ROLES } from './demo-data';
 
 /** The ordered statuses a task passes through to reach `target`, starting from PENDING. */

@@ -1,6 +1,9 @@
 import { DEMO_USERS } from '../src/database/seeds/demo-data';
 import { runSeed } from '../src/database/seeds/run-seed';
-import { Role, Task, TaskStatusHistory, User } from '../src/database/entities';
+import { Role } from '../src/modules/users/entities/role.entity';
+import { Task } from '../src/modules/tasks/entities/task.entity';
+import { TaskStatusHistory } from '../src/modules/tasks/entities/task-status-history.entity';
+import { User } from '../src/modules/users/entities/user.entity';
 import { createTestApp, TestContext } from './helpers/test-app';
 
 describe('database schema and seed', () => {

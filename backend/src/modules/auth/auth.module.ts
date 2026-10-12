@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { User } from '../../database/entities';
+import { User } from '../users/entities/user.entity';
 import { SecurityModule } from '../security/security.module';
-import { AuthController } from './auth.controller';
-import { AuthService } from './auth.service';
-import { RefreshTokenService } from './refresh-token.service';
+import { AuthController } from './controllers/auth.controller';
+import { AuthService } from './services/auth.service';
+import { RefreshTokenService } from './services/refresh-token.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([User]), SecurityModule],

@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { RefreshToken, Role, Task, User } from '../../database/entities';
+import { RefreshToken } from '../auth/entities/refresh-token.entity';
+import { Role } from './entities/role.entity';
+import { Task } from '../tasks/entities/task.entity';
+import { User } from './entities/user.entity';
 import { SecurityModule } from '../security/security.module';
-import { RolesController } from './roles.controller';
-import { UsersController } from './users.controller';
-import { UsersService } from './users.service';
+import { RolesController } from './controllers/roles.controller';
+import { UsersController } from './controllers/users.controller';
+import { UsersService } from './services/users.service';
 
 @Module({
   imports: [

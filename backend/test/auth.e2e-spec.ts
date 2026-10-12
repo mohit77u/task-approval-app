@@ -1,7 +1,7 @@
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
-import { RefreshToken } from '../src/database/entities';
-import { hashRefreshToken } from '../src/modules/security/refresh-token.util';
+import { RefreshToken } from '../src/modules/auth/entities/refresh-token.entity';
+import { hashRefreshToken } from '../src/modules/security/utils/refresh-token.util';
 import { ADMIN, loginAgent, PRIYA, userIdOf } from './helpers/auth';
 import { cookieValue, setCookies } from './helpers/cookies';
 import { createTestApp, TestContext } from './helpers/test-app';

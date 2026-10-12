@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Task, TaskStatusHistory } from '../../database/entities';
+import { Task } from './entities/task.entity';
+import { TaskStatusHistory } from './entities/task-status-history.entity';
 import { UsersModule } from '../users/users.module';
-import { TasksController } from './tasks.controller';
-import { TasksService } from './tasks.service';
+import { TasksController } from './controllers/tasks.controller';
+import { TasksService } from './services/tasks.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Task, TaskStatusHistory]), UsersModule],

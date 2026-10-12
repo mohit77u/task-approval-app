@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { DEMO_PASSWORDS } from '../../src/database/seeds/demo-data';
-import { User } from '../../src/database/entities';
+import { User } from '../../src/modules/users/entities/user.entity';
 
 export const ADMIN = {
   email: 'admin@taskapp.dev',

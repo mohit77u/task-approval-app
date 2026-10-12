@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { Task } from '../src/database/entities';
+import { Task } from '../src/modules/tasks/entities/task.entity';
 import { TaskPriority } from '../src/common/enums/task-priority.enum';
 import { TaskStatus } from '../src/common/enums/task-status.enum';
 import { ADMIN, Agent, loginAgent, PRIYA, userIdOf } from './helpers/auth';
