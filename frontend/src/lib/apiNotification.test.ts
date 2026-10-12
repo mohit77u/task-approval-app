@@ -50,3 +50,10 @@ describe('notificationFor', () => {
     expect(notificationFor({ ...base, handled: true })).toBeNull();
   });
 });
+
+describe('SERVICE_UNAVAILABLE', () => {
+  it('is announced as a friendly error-level toast', () => {
+    const spec = notificationFor({ statusCode: 503, code: 'SERVICE_UNAVAILABLE', message: 'db down', details: [] });
+    expect(spec).toEqual({ level: 'error', message: 'The service is temporarily unavailable. Please try again in a moment.' });
+  });
+});

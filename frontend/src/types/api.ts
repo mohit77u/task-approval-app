@@ -77,6 +77,7 @@ export type ErrorCode =
   | 'CONFLICT'
   | 'RATE_LIMITED'
   | 'INTERNAL_ERROR'
+  | 'SERVICE_UNAVAILABLE'
   | 'NETWORK_ERROR'
   | 'UNKNOWN_ERROR';
 

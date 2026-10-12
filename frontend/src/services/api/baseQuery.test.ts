@@ -176,6 +176,23 @@ describe('baseQuery', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it('retries a GET that gets a SERVICE_UNAVAILABLE JSON 503, but never a POST', async () => {
+    const down = (): Response => json(503, errorBody('SERVICE_UNAVAILABLE', 503));
+    const getMock = vi.fn().mockResolvedValueOnce(down()).mockResolvedValueOnce(json(200, emptyPage));
+    vi.stubGlobal('fetch', getMock);
+    const got = await makeStore().dispatch(tasksApi.endpoints.listTasks.initiate({ page: 1, limit: 20 }));
+    expect(got.isSuccess).toBe(true);
+    expect(getMock).toHaveBeenCalledTimes(2);
+
+    const postMock = vi.fn(async () => down());
+    vi.stubGlobal('fetch', postMock);
+    const posted = await makeStore().dispatch(
+      tasksApi.endpoints.createTask.initiate({ title: 'T', description: 'D', priority: 'LOW', dueDate: '2030-01-01', assigneeId: 2 }),
+    );
+    expect(postMock).toHaveBeenCalledTimes(1);
+    expect(posted.error).toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+  });
+
   it('does not retry a POST after a network failure, so a task is never created twice', async () => {
     const fetchMock = vi.fn(async () => {
       throw new TypeError('Failed to fetch');

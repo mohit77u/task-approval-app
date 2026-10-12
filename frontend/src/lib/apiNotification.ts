@@ -22,6 +22,9 @@ export function notificationFor(error: ApiError): NotificationSpec | null {
       if (!first) return { level: 'error', message: error.message };
       return { level: 'error', message: rest.length ? `${first.message} (+${rest.length} more)` : first.message };
     }
+    case 'SERVICE_UNAVAILABLE':
+      // The backend's own wording is technical ("database unavailable"); users only need to know to retry.
+      return { level: 'error', message: 'The service is temporarily unavailable. Please try again in a moment.' };
     default:
       return { level: 'error', message: error.message };
   }
