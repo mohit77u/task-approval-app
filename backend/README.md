@@ -1,95 +1,54 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Backend - NestJS API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+REST API for tasks, approvals and users. TypeScript (strict), NestJS 11 (Express), TypeORM, MySQL 8. Setup, environment variables, migrate/seed and known limitations are in the [root README](../README.md).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Scripts
 
-## Description
+| Command | Purpose |
+|---|---|
+| `npm run start:dev` | Run with reload on `:4000` |
+| `npm run build` / `npm run start:prod` | Compile and run `dist/main` |
+| `npm test` | Unit tests (Jest, no database) |
+| `npm run lint` | ESLint (with `--fix`) |
+| `npm run migration:run` / `migration:revert` | Apply / revert migrations |
+| `npm run migration:generate -- src/database/migrations/<Name>` | Generate a migration from entity changes |
+| `npm run migration:run:prod`, `npm run seed:prod` | Same as above against the compiled `dist/` (run `npm run build` first) |
+| `npm run seed` | Idempotent seed (roles, demo users, sample tasks) |
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+There are no backend HTTP/e2e tests; the former e2e suite was removed. `.env.test*` files are unused leftovers.
 
-## Project setup
+## HTTP surface
 
-```bash
-$ npm install
+- Business routes are URI-versioned: `/api/v1/auth`, `/api/v1/users`, `/api/v1/roles`, `/api/v1/tasks`, comments under `tasks/:id/comments`, `/api/v1/dashboard`.
+- `GET /api/health` is version-neutral and unauthenticated (uptime monitors may use `HEAD`).
+- Swagger UI: `/api/docs` (public).
+- Cookies: access token path `/api`, refresh token path `/api/v1/auth`.
+
+## Structure
+
+```
+src/
+  main.ts, app.setup.ts, swagger.setup.ts   bootstrap, shared HTTP configuration, Swagger
+  config/                    zod-validated environment (env.validation.ts)
+  database/                  TypeORM options, data-source, migrations, seeds
+  security/                  tokens, cookie options, password hashing, refresh-token utils
+  common/                    guards, middleware, errors, pipes, decorators, enums, DTO helpers
+  modules/<name>/            auth, users, tasks, comments, dashboard, health
+    controllers/ services/ dto/ entities/   (plus mappers/ and state-machine/ where needed)
 ```
 
-## Compile and run the project
+Entities live in each module's `entities/` folder and are loaded by glob.
 
-```bash
-# development
-$ npm run start
+## Request pipeline
 
-# watch mode
-$ npm run start:dev
+1. Middleware: request id, then Origin check (state-changing requests), then JWT authentication. JWT auth is skipped for `POST auth/login`, `auth/refresh`, `auth/logout` and `GET/HEAD health` (see `app.module.ts`).
+2. Global guards: rate limiter (`AppThrottlerGuard`; login limited per email+IP) and `RolesGuard`.
+3. Validation pipe (whitelist, unknown fields rejected), controller, service.
+4. Global exception filter renders the single error shape.
 
-# production mode
-$ npm run start:prod
-```
+## Conventions
 
-## Run tests
-
-```bash
-# unit tests
-$ npm run test
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- Controllers are thin; rules live in services or pure functions (for example `task-state-machine.ts`).
+- Every error is an `AppException` with a stable `code`.
+- Anything that reads tasks starts from `TasksService.createScopedQuery`, so visibility rules cannot drift.
+- Schema changes only through migrations; `synchronize` is off.
