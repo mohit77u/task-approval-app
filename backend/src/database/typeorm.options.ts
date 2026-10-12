@@ -2,22 +2,6 @@ import { join } from 'node:path';
 import { DataSourceOptions } from 'typeorm';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import { Env } from '../config/env.validation';
-import { RefreshToken } from '../modules/auth/entities/refresh-token.entity';
-import { TaskComment } from '../modules/comments/entities/task-comment.entity';
-import { TaskStatusHistory } from '../modules/tasks/entities/task-status-history.entity';
-import { Task } from '../modules/tasks/entities/task.entity';
-import { Role } from '../modules/users/entities/role.entity';
-import { User } from '../modules/users/entities/user.entity';
-
-// Each entity lives in its owning module; this is only the registry TypeORM needs.
-const ENTITIES = [
-  Role,
-  User,
-  Task,
-  TaskComment,
-  TaskStatusHistory,
-  RefreshToken,
-];
 
 export type DbEnv = Pick<
   Env,
@@ -45,7 +29,10 @@ export function buildDataSourceOptions(db: DbEnv): DataSourceOptions {
       ? { ca: db.DB_SSL_CA?.replace(/\\n/g, '\n'), rejectUnauthorized: true }
       : undefined,
     namingStrategy: new SnakeNamingStrategy(),
-    entities: ENTITIES,
+    // Entities live in their owning module (modules/<name>/entities); the glob matches .ts (ts-node, jest) and .js (dist).
+    entities: [
+      join(__dirname, '..', 'modules', '**', 'entities', '*.entity{.ts,.js}'),
+    ],
     migrations: [join(__dirname, 'migrations', '*{.ts,.js}')],
     // The schema is owned by migrations. Letting TypeORM auto-sync would silently diverge environments.
     synchronize: false,
