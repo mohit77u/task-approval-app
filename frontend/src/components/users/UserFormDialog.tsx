@@ -172,7 +172,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-md" showCloseButton={!pending}>
+      <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-md" showCloseButton={!pending}>
         <DialogHeader>
           <DialogTitle>{user ? 'Edit user' : 'New user'}</DialogTitle>
           <DialogDescription>

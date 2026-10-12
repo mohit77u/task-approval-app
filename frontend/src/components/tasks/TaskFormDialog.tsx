@@ -158,7 +158,7 @@ export function TaskFormDialog({ open, onOpenChange, task }: TaskFormDialogProps
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-lg" showCloseButton={!pending}>
+      <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-lg" showCloseButton={!pending}>
         <DialogHeader>
           <DialogTitle>{task ? 'Edit task' : 'New task'}</DialogTitle>
           <DialogDescription>{task ? 'Update the details or reassign the task.' : 'Create a task and assign it to an employee.'}</DialogDescription>

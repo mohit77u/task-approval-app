@@ -16,7 +16,7 @@ export function Topbar(): React.JSX.Element {
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetTrigger asChild>
             <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open navigation">
@@ -32,10 +32,10 @@ export function Topbar(): React.JSX.Element {
             </div>
           </SheetContent>
         </Sheet>
-        <span className="font-semibold md:hidden">Task &amp; Approval</span>
+        <span className="truncate font-semibold md:hidden">Task &amp; Approval</span>
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         <ThemeToggle />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
