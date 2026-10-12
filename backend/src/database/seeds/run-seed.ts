@@ -6,7 +6,13 @@ import { Task } from '../../modules/tasks/entities/task.entity';
 import { TaskStatusHistory } from '../../modules/tasks/entities/task-status-history.entity';
 import { User } from '../../modules/users/entities/user.entity';
 import { BCRYPT_COST } from '../../security/utils/password.constants';
-import { DEMO_USERS, SAMPLE_TASKS, SEED_ROLES } from './demo-data';
+import { RoleCode } from '../../common/enums/role-code.enum';
+import {
+  DemoPasswords,
+  DEMO_USERS,
+  SAMPLE_TASKS,
+  SEED_ROLES,
+} from './demo-data';
 
 /** The ordered statuses a task passes through to reach `target`, starting from PENDING. */
 function pathTo(target: TaskStatus): TaskStatus[] {
@@ -26,12 +32,13 @@ function dateOffset(days: number): string {
 }
 
 /**
- * Idempotent: roles and users are looked up before being created, and sample tasks are only inserted into an
- * empty table, so running the seed twice never duplicates data.
+ * Idempotent and non-destructive: roles (by code) and demo users (by email) are inserted only when missing, and sample
+ * tasks only into an empty table. Existing rows are never updated, so re-running the seed does not duplicate data and
+ * does not reset a demo user's edited name, phone or password.
  */
 export async function runSeed(
   dataSource: DataSource,
-  options: { sampleTasks: boolean },
+  options: { sampleTasks: boolean; passwords: DemoPasswords },
 ): Promise<void> {
   const roles = dataSource.getRepository(Role);
   const users = dataSource.getRepository(User);
@@ -52,7 +59,12 @@ export async function runSeed(
         phone: demo.phone,
         isDefault: true,
         roleId: role.id,
-        passwordHash: await bcrypt.hash(demo.password, BCRYPT_COST),
+        passwordHash: await bcrypt.hash(
+          demo.role === RoleCode.ADMIN
+            ? options.passwords.admin
+            : options.passwords.employee,
+          BCRYPT_COST,
+        ),
       }),
     );
   }

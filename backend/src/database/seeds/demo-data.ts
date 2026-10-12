@@ -2,11 +2,30 @@ import { TaskPriority } from '../../common/enums/task-priority.enum';
 import { TaskStatus } from '../../common/enums/task-status.enum';
 import { RoleCode } from '../../common/enums/role-code.enum';
 
-/** Demo-only accounts that the README publishes for reviewers. Never reuse these values for real systems. */
-export const DEMO_PASSWORDS = {
+export interface DemoPasswords {
+  admin: string;
+  employee: string;
+}
+
+/** Demo-only passwords that the README publishes for reviewers. Never reuse these values for real systems. */
+export const DEFAULT_DEMO_PASSWORDS: Readonly<DemoPasswords> = {
   admin: 'Admin@12345',
   employee: 'Employee@12345',
-} as const;
+};
+
+/**
+ * The passwords given to newly created demo accounts: SEED_ADMIN_PASSWORD / SEED_EMPLOYEE_PASSWORD when set (so a
+ * shared or hosted instance need not use the published values), otherwise the documented defaults.
+ */
+export function resolveDemoPasswords(env: {
+  SEED_ADMIN_PASSWORD?: string;
+  SEED_EMPLOYEE_PASSWORD?: string;
+}): DemoPasswords {
+  return {
+    admin: env.SEED_ADMIN_PASSWORD ?? DEFAULT_DEMO_PASSWORDS.admin,
+    employee: env.SEED_EMPLOYEE_PASSWORD ?? DEFAULT_DEMO_PASSWORDS.employee,
+  };
+}
 
 export const SEED_ROLES = [
   { code: RoleCode.ADMIN, name: 'Administrator' },
@@ -19,35 +38,30 @@ export const DEMO_USERS = [
     phone: '+91 90000 00001',
     email: 'admin@taskapp.dev',
     role: RoleCode.ADMIN,
-    password: DEMO_PASSWORDS.admin,
   },
   {
     name: 'Kavya Nair',
     phone: '+91 90000 00002',
     email: 'admin2@taskapp.dev',
     role: RoleCode.ADMIN,
-    password: DEMO_PASSWORDS.admin,
   },
   {
     name: 'Priya Sharma',
     phone: '+91 90000 00003',
     email: 'priya@taskapp.dev',
     role: RoleCode.EMPLOYEE,
-    password: DEMO_PASSWORDS.employee,
   },
   {
     name: 'Rahul Verma',
     phone: '+91 90000 00004',
     email: 'rahul@taskapp.dev',
     role: RoleCode.EMPLOYEE,
-    password: DEMO_PASSWORDS.employee,
   },
   {
     name: 'Ananya Iyer',
     phone: '+91 90000 00005',
     email: 'ananya@taskapp.dev',
     role: RoleCode.EMPLOYEE,
-    password: DEMO_PASSWORDS.employee,
   },
 ] as const;
 
