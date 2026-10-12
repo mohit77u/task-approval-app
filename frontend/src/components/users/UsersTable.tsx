@@ -1,7 +1,6 @@
-import { Pencil, Trash2 } from 'lucide-react';
-import { DisabledReason } from '@/components/common/DisabledReason';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { UserRowActions } from '@/components/users/UserRowActions';
+import { useIsDesktop } from '@/hooks/useMediaQuery';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { User } from '@/types/api';
 
@@ -13,15 +12,7 @@ interface UsersTableProps {
   onDelete: (user: User) => void;
 }
 
-/** Why Delete is unavailable for a row, or undefined when it is allowed. The backend enforces the same rules (and the "has tasks" one). */
-function deleteBlockedReason(user: User, currentUserId: number, isDeleting: boolean): string | undefined {
-  if (user.isDefault) return "Default accounts can't be deleted";
-  if (user.id === currentUserId) return "You can't delete your own account";
-  if (isDeleting) return 'Deleting…';
-  return undefined;
-}
-
-export function UsersTable({ users, currentUserId, isDeleting, onEdit, onDelete }: UsersTableProps): React.JSX.Element {
+function UsersTableView({ users, currentUserId, isDeleting, onEdit, onDelete }: UsersTableProps): React.JSX.Element {
   return (
     <div className="overflow-x-auto rounded-md border">
       <Table>
@@ -36,7 +27,6 @@ export function UsersTable({ users, currentUserId, isDeleting, onEdit, onDelete 
         </TableHeader>
         <TableBody>
           {users.map((user) => {
-            const blocked = deleteBlockedReason(user, currentUserId, isDeleting);
             return (
               <TableRow key={user.id}>
                 <TableCell className="font-medium">
@@ -49,14 +39,7 @@ export function UsersTable({ users, currentUserId, isDeleting, onEdit, onDelete 
                   <Badge variant={user.role.code === 'ADMIN' ? 'default' : 'secondary'}>{user.role.name}</Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button variant="ghost" size="icon" aria-label={`Edit ${user.name}`} onClick={() => onEdit(user)}>
-                    <Pencil className="h-4 w-4" aria-hidden />
-                  </Button>
-                  <DisabledReason reason={blocked}>
-                    <Button variant="ghost" size="icon" aria-label={`Delete ${user.name}`} disabled={Boolean(blocked)} onClick={() => onDelete(user)}>
-                      <Trash2 className="h-4 w-4" aria-hidden />
-                    </Button>
-                  </DisabledReason>
+                  <UserRowActions user={user} currentUserId={currentUserId} isDeleting={isDeleting} onEdit={onEdit} onDelete={onDelete} />
                 </TableCell>
               </TableRow>
             );
@@ -65,4 +48,38 @@ export function UsersTable({ users, currentUserId, isDeleting, onEdit, onDelete 
       </Table>
     </div>
   );
+}
+
+/** Stacked cards for narrow screens, where five columns (long emails especially) would scroll sideways. */
+function UsersCardList({ users, currentUserId, isDeleting, onEdit, onDelete }: UsersTableProps): React.JSX.Element {
+  return (
+    <ul className="flex flex-col gap-3">
+      {users.map((user) => (
+        <li key={user.id} className="rounded-md border bg-card p-3 text-card-foreground">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 py-1">
+              <p className="break-words font-medium">
+                {user.name}
+                {user.isDefault && <span className="ml-2 text-xs font-normal text-muted-foreground">(default)</span>}
+              </p>
+              <p className="break-all text-sm text-muted-foreground">{user.email}</p>
+            </div>
+            <div className="-mr-1 flex shrink-0">
+              <UserRowActions user={user} currentUserId={currentUserId} isDeleting={isDeleting} onEdit={onEdit} onDelete={onDelete} buttonClassName="size-10" />
+            </div>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <Badge variant={user.role.code === 'ADMIN' ? 'default' : 'secondary'}>{user.role.name}</Badge>
+            <span className="text-muted-foreground">{user.phone ?? '—'}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Table from the `md` breakpoint up, cards below it. Only one layout is mounted so buttons are never duplicated in the DOM. */
+export function UsersTable(props: UsersTableProps): React.JSX.Element {
+  const isDesktop = useIsDesktop();
+  return isDesktop ? <UsersTableView {...props} /> : <UsersCardList {...props} />;
 }

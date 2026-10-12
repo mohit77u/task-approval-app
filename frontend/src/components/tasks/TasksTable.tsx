@@ -1,13 +1,11 @@
-import { MoreHorizontal } from 'lucide-react';
 import Link from 'next/link';
 import { PriorityBadge } from '@/components/common/PriorityBadge';
-import { DisabledReason } from '@/components/common/DisabledReason';
 import { StatusBadge } from '@/components/common/StatusBadge';
-import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { TaskRowActions } from '@/components/tasks/TaskRowActions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatDueDate, isOverdue } from '@/lib/dates';
 import { cn } from '@/lib/utils';
+import { useIsDesktop } from '@/hooks/useMediaQuery';
 import { Task } from '@/types/api';
 
 interface TasksTableProps {
@@ -19,7 +17,7 @@ interface TasksTableProps {
   onDelete: (task: Task) => void;
 }
 
-export function TasksTable({ tasks, isAdmin, isDeleting = false, onEdit, onDelete }: TasksTableProps): React.JSX.Element {
+function TasksTableView({ tasks, isAdmin, isDeleting, onEdit, onDelete }: Required<TasksTableProps>): React.JSX.Element {
   return (
     <div className="overflow-x-auto rounded-md border">
       <Table>
@@ -60,25 +58,7 @@ export function TasksTable({ tasks, isAdmin, isDeleting = false, onEdit, onDelet
                 </TableCell>
                 {isAdmin && (
                   <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" aria-label={`Actions for ${task.title}`}>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DisabledReason reason={task.status === 'COMPLETED' ? "Completed tasks can't be edited" : undefined} focusable={false}>
-                          <DropdownMenuItem disabled={task.status === 'COMPLETED'} onSelect={() => onEdit(task)}>
-                            Edit
-                          </DropdownMenuItem>
-                        </DisabledReason>
-                        <DisabledReason reason={isDeleting ? 'Deleting…' : undefined} focusable={false}>
-                          <DropdownMenuItem disabled={isDeleting} className="text-destructive focus:text-destructive" onSelect={() => onDelete(task)}>
-                            Delete
-                          </DropdownMenuItem>
-                        </DisabledReason>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <TaskRowActions task={task} isDeleting={isDeleting} onEdit={onEdit} onDelete={onDelete} />
                   </TableCell>
                 )}
               </TableRow>
@@ -88,4 +68,49 @@ export function TasksTable({ tasks, isAdmin, isDeleting = false, onEdit, onDelet
       </Table>
     </div>
   );
+}
+
+/** Stacked cards for narrow screens, where a five-column table would scroll sideways. */
+function TasksCardList({ tasks, isAdmin, isDeleting, onEdit, onDelete }: Required<TasksTableProps>): React.JSX.Element {
+  return (
+    <ul className="flex flex-col gap-3">
+      {tasks.map((task) => {
+        const overdue = isOverdue(task.dueDate, task.status);
+        return (
+          <li key={task.id} className="rounded-md border bg-card p-3 text-card-foreground">
+            <div className="flex items-start justify-between gap-2">
+              <Link href={`/tasks/${task.id}`} className="min-w-0 break-words py-2 font-medium hover:underline">
+                {task.title}
+              </Link>
+              {isAdmin && <TaskRowActions task={task} isDeleting={isDeleting} onEdit={onEdit} onDelete={onDelete} className="-mr-1 size-10 shrink-0" />}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <StatusBadge status={task.status} />
+              <PriorityBadge priority={task.priority} />
+            </div>
+            <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+              {isAdmin && (
+                <>
+                  <dt className="text-muted-foreground">Assignee</dt>
+                  <dd className="min-w-0 break-words">{task.assignee.name}</dd>
+                </>
+              )}
+              <dt className="text-muted-foreground">Due</dt>
+              <dd className={cn(overdue && 'font-medium text-destructive')}>
+                {formatDueDate(task.dueDate)}
+                {overdue && <span className="ml-1 text-xs">(overdue)</span>}
+              </dd>
+            </dl>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Table from the `md` breakpoint up, cards below it. Only one layout is mounted so links and menus are never duplicated in the DOM. */
+export function TasksTable({ isDeleting = false, ...rest }: TasksTableProps): React.JSX.Element {
+  const isDesktop = useIsDesktop();
+  const props = { ...rest, isDeleting };
+  return isDesktop ? <TasksTableView {...props} /> : <TasksCardList {...props} />;
 }
